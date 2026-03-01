@@ -1,0 +1,48 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: stock-ledger-api:latest
+    container_name: stock-ledger-api
+    ports:
+      - "8000:8000"
+    environment:
+      DB_PATH: /data/ledger.db
+    volumes:
+      - ledger_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    image: stock-ledger-web:latest
+    container_name: stock-ledger-web
+    ports:
+      - "3001:3000"
+    environment:
+      DOCKER: "1"
+      # Server-side only: Next.js rewrites /api/* → ${API_URL}/api/*
+      API_URL: "http://api:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    # 可選：Windows/WSL 有時需要，保險起見加上
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  ledger_data:
+    driver: local
