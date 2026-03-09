@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── 1. Backend unit tests ───────────────────────────────────────────────────
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r apps/api/requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  # ── 2. Frontend lint ────────────────────────────────────────────────────────
+  # Relies on "lint": "next lint" confirmed in apps/web/package.json
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+  # ── 3. TypeScript type-check ────────────────────────────────────────────────
+  # Uses npx tsc --noEmit directly.
+  # tsconfig.json confirms: "noEmit": true, "strict": true.
+  # See also: apps/web/package.json "type-check" script.
+  frontend-typecheck:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+  # ── 4. Ledger smoke test ────────────────────────────────────────────────────
+  # Runs in-process against a temporary SQLite file. No server needed.
+  # API signatures verified against ledger/ledger.py.
+  smoke:
+    name: Ledger Smoke
+    runs-on: ubuntu-latest
+    needs: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r apps/api/requirements.txt
+
+      - name: Smoke test
+        run: |
+          python - <<'EOF'
+          import sys, tempfile
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path(".").resolve()))
+          from ledger import StockLedger
+
+          with tempfile.TemporaryDirectory() as d:
+              l = StockLedger(db_path=Path(d) / "smoke.db")
+
+              # Cash
+              l.add_cash(100_000, "2024-01-01")
+              bal = l.cash_balance("2024-01-01")
+              assert bal == 100_000, f"cash balance wrong: {bal}"
+
+              # Buy
+              l.add_trade("AAPL", "buy", 10, 150.0, "2024-01-02")
+              pos = l.position("AAPL")
+              assert pos == 10, f"position wrong after buy: {pos}"
+
+              # Partial sell
+              l.add_trade("AAPL", "sell", 4, 160.0, "2024-01-03")
+              pos = l.position("AAPL")
+              assert pos == 6, f"position wrong after partial sell: {pos}"
+
+              # Oversell must raise
+              try:
+                  l.add_trade("AAPL", "sell", 100, 160.0, "2024-01-04")
+                  raise AssertionError("oversell should have raised ValueError")
+              except ValueError:
+                  pass  # expected
+
+              # Cash insufficient for buy must raise
+              try:
+                  l.add_trade("TSLA", "buy", 99999, 999.0, "2024-01-05")
+                  raise AssertionError("cash-short buy should have raised ValueError")
+              except ValueError:
+                  pass  # expected
+
+          print("smoke: all assertions passed")
+          EOF

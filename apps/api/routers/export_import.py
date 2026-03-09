@@ -123,7 +123,10 @@ async def import_trades(
     content = await file.read()
     rows = _parse_csv(content)
     required = {"date", "symbol", "side", "qty", "price"}
-    inserted = skipped = 0
+    inserted = 0
+    # skipped is reserved for future duplicate-detection logic; currently always 0
+    # because every row is either inserted or appended to errors with no third path.
+    skipped = 0
     errors: list[dict] = []
 
     for i, row in enumerate(rows, start=2):
@@ -174,7 +177,6 @@ async def import_trades(
             except Exception as exc:
                 errors.append({"row": i, "message": str(exc), "raw": str(row)})
 
-    skipped = len(rows) - inserted - len(errors)
     return {"ok": len(errors) == 0, "inserted": inserted, "skipped": skipped, "errors": errors, "dry_run": dry_run}
 
 
@@ -191,7 +193,9 @@ async def import_cash(
     content = await file.read()
     rows = _parse_csv(content)
     required = {"date", "amount"}
-    inserted = skipped = 0
+    inserted = 0
+    # skipped is reserved for future duplicate-detection logic; currently always 0.
+    skipped = 0
     errors: list[dict] = []
 
     for i, row in enumerate(rows, start=2):
@@ -222,7 +226,6 @@ async def import_cash(
             except Exception as exc:
                 errors.append({"row": i, "message": str(exc), "raw": str(row)})
 
-    skipped = len(rows) - inserted - len(errors)
     return {"ok": len(errors) == 0, "inserted": inserted, "skipped": skipped, "errors": errors, "dry_run": dry_run}
 
 
@@ -239,7 +242,9 @@ async def import_quotes(
     content = await file.read()
     rows = _parse_csv(content)
     required = {"symbol", "date", "close"}
-    inserted = skipped = 0
+    inserted = 0
+    # skipped is reserved for future duplicate-detection logic; currently always 0.
+    skipped = 0
     errors: list[dict] = []
 
     for i, row in enumerate(rows, start=2):
@@ -270,5 +275,4 @@ async def import_quotes(
             except Exception as exc:
                 errors.append({"row": i, "message": str(exc), "raw": str(row)})
 
-    skipped = len(rows) - inserted - len(errors)
     return {"ok": len(errors) == 0, "inserted": inserted, "skipped": skipped, "errors": errors, "dry_run": dry_run}
