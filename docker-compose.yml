@@ -9,6 +9,10 @@ services:
       - "8000:8000"
     environment:
       DB_PATH: /data/ledger.db
+      QUOTE_PROVIDER: auto
+      FINMIND_TOKEN: ""
+      TZ: Asia/Taipei
+      AUTO_REFRESH_QUOTES_ON_TRADE: "1"
     volumes:
       - ledger_data:/data
     restart: unless-stopped

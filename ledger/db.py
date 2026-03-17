@@ -33,6 +33,11 @@ def init_db(conn: sqlite3.Connection) -> None:
             qty         REAL    NOT NULL CHECK(qty > 0),
             price       REAL    NOT NULL CHECK(price > 0),
             commission  REAL    NOT NULL DEFAULT 0 CHECK(commission >= 0),
+            -- NOTE: tax intentionally has no CHECK(tax >= 0) here.
+            -- SQLite cannot add a CHECK constraint to an existing column via ALTER TABLE,
+            -- so adding it now would require recreating the table with a data migration.
+            -- The tax >= 0 invariant is enforced in StockLedger.add_trade() (ValueError).
+            -- Track as: schema-level CHECK(tax >= 0) pending table recreation migration.
             tax         REAL    NOT NULL DEFAULT 0,
             note        TEXT    DEFAULT '',
             is_void     INTEGER NOT NULL DEFAULT 0,
@@ -64,5 +69,6 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE trades ADD COLUMN is_void INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     if "tax" not in trade_cols:
+        # ALTER TABLE cannot carry a CHECK constraint; see schema comment above.
         conn.execute("ALTER TABLE trades ADD COLUMN tax REAL NOT NULL DEFAULT 0")
         conn.commit()

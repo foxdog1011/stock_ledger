@@ -65,7 +65,7 @@ def seed_demo(ledger: StockLedger = Depends(get_ledger)):
     Monthly close prices are included so the equity curve renders correctly.
     """
     # 1. Clear all tables
-    conn = get_connection(ledger._db_path)
+    conn = get_connection(ledger.db_path)
     try:
         conn.execute("DELETE FROM prices")
         conn.execute("DELETE FROM trades")

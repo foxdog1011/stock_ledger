@@ -1,13 +1,16 @@
 """Core StockLedger class."""
 from __future__ import annotations
 
+import bisect
 import sqlite3
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date as Date
-import bisect
-from collections import defaultdict
 from pathlib import Path
 from typing import Generator
+
+import pandas as pd
+from pandas.tseries.offsets import BDay
 
 from .db import DEFAULT_DB, get_connection, init_db
 
@@ -33,6 +36,11 @@ class StockLedger:
         self._db_path = Path(db_path) if db_path else DEFAULT_DB
         with self._conn() as conn:
             init_db(conn)
+
+    @property
+    def db_path(self) -> Path:
+        """Public accessor for the database file path."""
+        return self._db_path
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -442,7 +450,7 @@ class StockLedger:
         return entries
 
     # ------------------------------------------------------------------ #
-    # Position P&L (Weighted Average Cost)                                 #
+    # Position P&L (Weighted Average Cost) — delegates to domain layer    #
     # ------------------------------------------------------------------ #
 
     def position_pnl(
@@ -462,50 +470,8 @@ class StockLedger:
             symbol, qty, avg_cost, realized_pnl, unrealized_pnl,
             last_price, price_source, market_value
         """
-        as_of = str(as_of) if as_of else str(Date.today())
-
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT side, qty, price, commission, tax FROM trades "
-                "WHERE symbol = ? AND date <= ? AND is_void = 0 ORDER BY date, id",
-                (symbol.upper(), as_of),
-            ).fetchall()
-
-        shares = 0.0
-        avg_cost = 0.0      # per share, includes buy commission + tax
-        realized = 0.0
-
-        for t in rows:
-            qty = t["qty"]
-            price = t["price"]
-            comm = t["commission"]
-            tax = t["tax"]
-
-            if t["side"] == "buy":
-                cost_per_share = (qty * price + comm + tax) / qty
-                avg_cost = (shares * avg_cost + qty * cost_per_share) / (shares + qty)
-                shares += qty
-            else:
-                realized += (price - avg_cost) * qty - comm - tax
-                shares -= qty
-
-        px, source = self._last_price_with_source(symbol, as_of)
-        unrealized = (
-            round((px - avg_cost) * shares, 2)
-            if (px is not None and shares > 0)
-            else None
-        )
-
-        return {
-            "symbol": symbol.upper(),
-            "qty": shares,
-            "avg_cost": round(avg_cost, 4) if shares > 0 else None,
-            "realized_pnl": round(realized, 2),
-            "unrealized_pnl": unrealized,
-            "last_price": px,
-            "price_source": source,
-            "market_value": round(px * shares, 2) if (px is not None and shares > 0) else None,
-        }
+        from domain.portfolio.pnl import position_pnl as _position_pnl
+        return _position_pnl(self, symbol, as_of)
 
     def all_positions_pnl(
         self,
@@ -520,22 +486,8 @@ class StockLedger:
         open_only : bool
             If ``True`` (default), only symbols with qty > 0 are returned.
         """
-        as_of = str(as_of) if as_of else str(Date.today())
-
-        with self._conn() as conn:
-            symbols = [
-                r[0]
-                for r in conn.execute(
-                    "SELECT DISTINCT symbol FROM trades "
-                    "WHERE date <= ? AND is_void = 0 ORDER BY symbol",
-                    (as_of,),
-                ).fetchall()
-            ]
-
-        results = [self.position_pnl(sym, as_of=as_of) for sym in symbols]
-        if open_only:
-            results = [r for r in results if r["qty"] > 0]
-        return results
+        from domain.portfolio.pnl import all_positions_pnl as _all_positions_pnl
+        return _all_positions_pnl(self, as_of, open_only)
 
     # ------------------------------------------------------------------ #
     # Daily equity & P&L                                                  #
@@ -560,9 +512,6 @@ class StockLedger:
             external_cashflow, daily_change, daily_pnl,
             daily_return_pct, price_staleness_days, used_quote_date_map
         """
-        import pandas as pd
-        from pandas.tseries.offsets import BDay
-
         start_str = str(start)
         end_str   = str(end)
 
@@ -624,15 +573,14 @@ class StockLedger:
             )
 
             # Price staleness
-            from datetime import date as _Date
-            as_of_d = _Date.fromisoformat(date_str)
+            as_of_d = Date.fromisoformat(date_str)
             max_staleness: int | None = None
             quote_date_map: dict[str, str | None] = {}
             for sym in snap["positions"]:
                 lq = _last_quote(sym, date_str)
                 quote_date_map[sym] = lq
                 if lq is not None:
-                    staleness = (as_of_d - _Date.fromisoformat(lq)).days
+                    staleness = (as_of_d - Date.fromisoformat(lq)).days
                     max_staleness = (
                         staleness if max_staleness is None
                         else max(max_staleness, staleness)
@@ -655,7 +603,7 @@ class StockLedger:
         return records
 
     # ------------------------------------------------------------------ #
-    # Position detail (cost summary + WAC history)                        #
+    # Position detail (cost summary + WAC history) — delegates to domain  #
     # ------------------------------------------------------------------ #
 
     def position_detail(
@@ -666,79 +614,11 @@ class StockLedger:
         """
         Extended position detail: base P&L + cost_summary + running_wac + wac_series.
         """
-        as_of = str(as_of) if as_of else str(Date.today())
-        sym = symbol.upper()
-
-        pnl = self.position_pnl(sym, as_of=as_of)
-
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT id, date, side, qty, price, commission, tax, note FROM trades "
-                "WHERE symbol = ? AND date <= ? AND is_void = 0 ORDER BY date, id",
-                (sym, as_of),
-            ).fetchall()
-        trades = [dict(r) for r in rows]
-        buys = [t for t in trades if t["side"] == "buy"]
-
-        if buys:
-            cost_summary = {
-                "buy_count": len(buys),
-                "buy_qty_total": sum(t["qty"] for t in buys),
-                "buy_cost_total_including_fees": round(
-                    sum(t["qty"] * t["price"] + t["commission"] + t["tax"] for t in buys), 2
-                ),
-                "min_buy_price": min(t["price"] for t in buys),
-                "max_buy_price": max(t["price"] for t in buys),
-                "first_buy_date": buys[0]["date"],
-                "last_buy_date":  buys[-1]["date"],
-            }
-        else:
-            cost_summary = None
-
-        shares = 0.0
-        avg_cost = 0.0
-        running_wac: list[dict] = []
-        wac_series: list[dict] = []
-
-        for t in trades:
-            qty   = t["qty"]
-            price = t["price"]
-            comm  = t["commission"]
-            tax   = t["tax"]
-            if t["side"] == "buy":
-                cost_per_share = (qty * price + comm + tax) / qty
-                avg_cost = (shares * avg_cost + qty * cost_per_share) / (shares + qty)
-                shares += qty
-            else:
-                shares -= qty
-
-            entry = {
-                "trade_id":       t["id"],
-                "date":           t["date"],
-                "side":           t["side"],
-                "qty":            qty,
-                "price":          price,
-                "commission":     comm,
-                "tax":            tax,
-                "qty_after":      round(shares, 6),
-                "avg_cost_after": round(avg_cost, 4) if shares > 0 else None,
-            }
-            running_wac.append(entry)
-            if shares > 0:
-                wac_series.append({"date": t["date"], "avg_cost": round(avg_cost, 4)})
-
-        px  = pnl.get("last_price")
-        avg = pnl.get("avg_cost")
-        pnl_pct = (
-            round((px - avg) / avg * 100, 2)
-            if (px and avg and pnl["qty"] > 0) else None
-        )
-
-        return {**pnl, "pnl_pct": pnl_pct, "cost_summary": cost_summary,
-                "running_wac": running_wac, "wac_series": wac_series}
+        from domain.portfolio.pnl import position_detail as _position_detail
+        return _position_detail(self, symbol, as_of)
 
     # ------------------------------------------------------------------ #
-    # Lot-level position detail (FIFO / LIFO / WAC)                       #
+    # Lot-level position detail (FIFO / LIFO / WAC) — delegates to domain #
     # ------------------------------------------------------------------ #
 
     def lots_by_method(
@@ -754,123 +634,8 @@ class StockLedger:
             FIFO / LIFO pairs sells to specific buy lots.
             WAC shows remaining lots (fifo-tracked qty) but uses WAC cost for P&L.
         """
-        as_of  = str(as_of) if as_of else str(Date.today())
-        sym    = symbol.upper()
-        method = method.lower()
-        if method not in ("fifo", "lifo", "wac"):
-            raise ValueError(f"method must be fifo, lifo, or wac; got '{method}'")
-
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT id, date, side, qty, price, commission, tax FROM trades "
-                "WHERE symbol = ? AND date <= ? AND is_void = 0 ORDER BY date, id",
-                (sym, as_of),
-            ).fetchall()
-        trades = [dict(r) for r in rows]
-
-        open_lots: list[dict] = []
-        realized_breakdown: list[dict] = []
-        lot_counter = 0
-        shares_wac  = 0.0
-        avg_cost_wac = 0.0
-
-        for t in trades:
-            qty   = t["qty"]
-            price = t["price"]
-            comm  = t["commission"]
-            tax   = t["tax"]
-
-            if t["side"] == "buy":
-                lot_counter += 1
-                cost_per_share = (qty * price + comm + tax) / qty
-                avg_cost_wac = (
-                    (shares_wac * avg_cost_wac + qty * cost_per_share)
-                    / (shares_wac + qty)
-                )
-                shares_wac += qty
-                open_lots.append({
-                    "lot_id":       lot_counter,
-                    "buy_trade_id": t["id"],
-                    "buy_date":     t["date"],
-                    "qty_remaining": qty,
-                    "buy_price":    price,
-                    "commission":   comm,
-                    "tax":          tax,
-                    "cost_per_share": round(cost_per_share, 4),
-                })
-            else:  # sell
-                shares_wac -= qty
-                remaining   = qty
-                allocations: list[dict] = []
-
-                indices = (
-                    list(range(len(open_lots) - 1, -1, -1))
-                    if method == "lifo"
-                    else list(range(len(open_lots)))
-                )
-                for i in indices:
-                    if remaining <= 0:
-                        break
-                    lot     = open_lots[i]
-                    consume = min(lot["qty_remaining"], remaining)
-                    lot["qty_remaining"] -= consume
-                    remaining -= consume
-                    prop = consume / qty
-                    net_proceeds      = consume * price - comm * prop - tax * prop
-                    realized_pnl_piece = net_proceeds - consume * lot["cost_per_share"]
-                    allocations.append({
-                        "lot_id":            lot["lot_id"],
-                        "qty":               consume,
-                        "buy_price":         lot["buy_price"],
-                        "cost_per_share":    lot["cost_per_share"],
-                        "realized_pnl_piece": round(realized_pnl_piece, 2),
-                    })
-
-                open_lots = [lot for lot in open_lots if lot["qty_remaining"] > 0]
-
-                if method != "wac":
-                    realized_breakdown.append({
-                        "sell_trade_id": t["id"],
-                        "sell_date":     t["date"],
-                        "sell_qty":      qty,
-                        "sell_price":    price,
-                        "commission":    comm,
-                        "tax":           tax,
-                        "allocations":   allocations,
-                    })
-
-        px, _ = self._last_price_with_source(sym, as_of)
-        result_lots: list[dict] = []
-        for lot in open_lots:
-            qty_rem  = lot["qty_remaining"]
-            cost_ps  = avg_cost_wac if method == "wac" and avg_cost_wac > 0 else lot["cost_per_share"]
-            mv       = round(qty_rem * px, 2) if px is not None else None
-            tot_cost = round(qty_rem * cost_ps, 2)
-            unreal   = round(mv - tot_cost, 2) if mv is not None else None
-            result_lots.append({
-                "lot_id":         lot["lot_id"],
-                "buy_trade_id":   lot["buy_trade_id"],
-                "buy_date":       lot["buy_date"],
-                "qty_remaining":  qty_rem,
-                "buy_price":      lot["buy_price"],
-                "commission":     lot["commission"],
-                "tax":            lot["tax"],
-                "cost_per_share": round(cost_ps, 4),
-                "total_cost":     tot_cost,
-                "market_price":   px,
-                "market_value":   mv,
-                "unrealized_pnl": unreal,
-            })
-
-        return {
-            "symbol":            sym,
-            "method":            method,
-            "as_of":             as_of,
-            "position_qty":      round(shares_wac, 6),
-            "avg_cost_wac":      round(avg_cost_wac, 4) if shares_wac > 0 else None,
-            "lots":              result_lots,
-            "realized_breakdown": realized_breakdown,
-        }
+        from domain.portfolio.lots import lots_by_method as _lots_by_method
+        return _lots_by_method(self, symbol, as_of, method)
 
     # ------------------------------------------------------------------ #
     # Price with source annotation                                         #

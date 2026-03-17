@@ -95,7 +95,7 @@ def export_cash(
 
 @router.get("/export/quotes.csv", summary="Export price quotes as CSV")
 def export_quotes(ledger: StockLedger = Depends(get_ledger)):
-    db_path = str(ledger._db_path)
+    db_path = str(ledger.db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         db_rows = conn.execute(
