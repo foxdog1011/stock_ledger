@@ -18,6 +18,8 @@ import type {
   CostSummary,
   RunningWacEntry,
   PositionDetailItem,
+  LastBuy,
+  CostImpact,
   LotRecord,
   LotAllocation,
   RealizedBreakdown,
@@ -27,6 +29,33 @@ import type {
   RiskMetrics,
   RebalanceCheck,
   ImportResult,
+  RefreshResult,
+  RefreshStatus,
+  ProviderInfo,
+  Attribution,
+  AttributionItem,
+  DigestRecord,
+  DigestSummary,
+  BenchmarkSeries,
+  BenchmarkCompare,
+  BenchmarkComparePoint,
+  BenchmarkPoint,
+  BenchmarkMetrics,
+  BenchmarkBootstrapResult,
+  BenchmarkBootstrapStatus,
+  OverviewData,
+  Catalyst,
+  CatalystScenario,
+  Watchlist,
+  WatchlistItem,
+  WatchlistGaps,
+  LosingPositionItem,
+  ProfitInventory,
+  OffsetSimulateResult,
+  UniverseCompany,
+  CompanyThesis,
+  CompanyRelationship,
+  CompanyDetail,
 } from "./types";
 
 // ── Base URL ───────────────────────────────────────────────────────────────────
@@ -89,6 +118,32 @@ export async function post<T>(path: string, body: unknown): Promise<T> {
 export async function patch<T>(path: string, body: unknown = {}): Promise<T> {
   return coreFetch(`${BASE}${path}`, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }) as Promise<T>;
+}
+
+export async function del(path: string): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE}${path}`, { method: "DELETE", signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok && res.status !== 204) {
+      let detail = `HTTP ${res.status}`;
+      try { detail = ((await res.json()) as { detail?: string }).detail ?? detail; } catch { /* ignore */ }
+      throw new ApiError(res.status, detail);
+    }
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") throw new ApiError(408, "Request timed out");
+    throw err;
+  }
+}
+
+export async function put<T>(path: string, body: unknown = {}): Promise<T> {
+  return coreFetch(`${BASE}${path}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }) as Promise<T>;
@@ -174,6 +229,64 @@ export const urls = {
 
   backupDb: () => url("/api/backup/db"),
   restoreDb: () => url("/api/restore/db"),
+
+  quotesRefresh: () => url("/api/quotes/refresh"),
+  quotesRefreshStatus: () => url("/api/quotes/refresh/status"),
+  quotesProvider: () => url("/api/quotes/provider"),
+
+  attribution: (p: { start: string; end: string; topN?: number }) =>
+    url(`/api/perf/attribution${qs({ start: p.start, end: p.end, top_n: p.topN != null ? String(p.topN) : undefined })}`),
+
+  digestGenerate: (date?: string, overwrite?: boolean) =>
+    url(`/api/digest/generate${qs({ date, overwrite: overwrite ? "true" : undefined })}`),
+  digest: (date: string) => url(`/api/digest/${date}`),
+  digestList: (p?: { start?: string; end?: string; limit?: number }) =>
+    url(`/api/digest${qs({ start: p?.start, end: p?.end, limit: p?.limit != null ? String(p.limit) : undefined })}`),
+  digestPatchNotes: (date: string) => url(`/api/digest/${date}/notes`),
+
+  benchmarkSeries: (p: { bench: string; start: string; end: string; freq?: string }) =>
+    url(`/api/benchmark/series${qs({ bench: p.bench, start: p.start, end: p.end, freq: p.freq ?? "ME" })}`),
+
+  benchmarkCompare: (p: { bench: string; start: string; end: string; freq?: string }) =>
+    url(`/api/benchmark/compare${qs({ bench: p.bench, start: p.start, end: p.end, freq: p.freq ?? "ME" })}`),
+
+  benchmarkBootstrap: () => url("/api/benchmark/bootstrap"),
+  benchmarkBootstrapStatus: () => url("/api/benchmark/bootstrap/status"),
+
+  overview: (p?: { asOf?: string; catalystDays?: number }) =>
+    url(`/api/overview${qs({ as_of: p?.asOf, catalyst_days: p?.catalystDays != null ? String(p.catalystDays) : undefined })}`),
+
+  catalysts: (p?: { symbol?: string; status?: string; eventType?: string }) =>
+    url(`/api/catalysts${qs({ symbol: p?.symbol, status: p?.status, event_type: p?.eventType })}`),
+  catalystUpcoming: (p?: { asOf?: string; days?: number }) =>
+    url(`/api/catalysts/upcoming${qs({ as_of: p?.asOf, days: p?.days != null ? String(p.days) : undefined })}`),
+  catalyst: (id: number) => url(`/api/catalysts/${id}`),
+  catalystScenario: (id: number) => url(`/api/catalysts/${id}/scenario`),
+
+  watchlistLists: () => url("/api/watchlist/lists"),
+  watchlistItems: (watchlistId: number, includeArchived?: boolean) =>
+    url(`/api/watchlist/lists/${watchlistId}/items${qs({ include_archived: includeArchived ? "true" : undefined })}`),
+  watchlistItem: (watchlistId: number, itemId: number) =>
+    url(`/api/watchlist/lists/${watchlistId}/items/${itemId}`),
+  watchlistGaps: (watchlistId: number) =>
+    url(`/api/watchlist/lists/${watchlistId}/gaps`),
+
+  offsetLosing: (asOf?: string) =>
+    url(`/api/execution/offset/losing${qs({ as_of: asOf })}`),
+
+  offsetProfitInventory: (asOf?: string) =>
+    url(`/api/execution/offset/profit-inventory${qs({ as_of: asOf })}`),
+
+  offsetSimulate: (p: { symbol: string; qty?: number; price?: number; asOf?: string }) =>
+    url(`/api/execution/offset/simulate/${p.symbol}${qs({
+      qty:   p.qty   != null ? String(p.qty)   : undefined,
+      price: p.price != null ? String(p.price) : undefined,
+      as_of: p.asOf,
+    })}`),
+
+  universeCompanies: () => url("/api/universe/companies"),
+  universeCompany:   (symbol: string) => url(`/api/universe/companies/${symbol}`),
+  universeTesis:     (symbol: string) => url(`/api/universe/companies/${symbol}/thesis`),
 } as const;
 
 // ── Multipart upload helper ───────────────────────────────────────────────────
@@ -335,17 +448,47 @@ function mapRunningWacEntry(raw: Raw): RunningWacEntry {
   };
 }
 
+function mapLastBuy(raw: Raw): LastBuy {
+  return {
+    tradeId:    pick(raw, "trade_id", "tradeId", 0) as number,
+    date:       raw.date as string,
+    qty:        raw.qty as number,
+    price:      raw.price as number,
+    commission: raw.commission as number,
+    tax:        raw.tax as number,
+  };
+}
+
+function mapCostImpact(raw: Raw): CostImpact {
+  return {
+    prevQty:             pick(raw, "prev_qty", "prevQty", 0) as number,
+    prevAvgCost:         pick(raw, "prev_avg_cost", "prevAvgCost", null) as number | null,
+    buyQty:              pick(raw, "buy_qty", "buyQty", 0) as number,
+    buyPrice:            pick(raw, "buy_price", "buyPrice", 0) as number,
+    buyFees:             pick(raw, "buy_fees", "buyFees", 0) as number,
+    newQty:              pick(raw, "new_qty", "newQty", 0) as number,
+    newAvgCost:          pick(raw, "new_avg_cost", "newAvgCost", 0) as number,
+    deltaAvgCost:        pick(raw, "delta_avg_cost", "deltaAvgCost", 0) as number,
+    deltaAvgCostPct:     pick(raw, "delta_avg_cost_pct", "deltaAvgCostPct", null) as number | null,
+    impactUnrealizedPnl: pick(raw, "impact_unrealized_pnl", "impactUnrealizedPnl", null) as number | null,
+  };
+}
+
 export function mapPositionDetail(raw: Raw): PositionDetailItem {
   const base = mapPosition(raw);
-  const cs = pick(raw, "cost_summary", "costSummary", null) as Raw | null;
+  const cs   = pick(raw, "cost_summary", "costSummary", null) as Raw | null;
   const rwArr = (pick(raw, "running_wac", "runningWac", []) as Raw[]);
   const wsArr = (pick(raw, "wac_series", "wacSeries", []) as Raw[]);
+  const lb   = pick(raw, "last_buy", "lastBuy", null) as Raw | null;
+  const ci   = pick(raw, "cost_impact", "costImpact", null) as Raw | null;
   return {
     ...base,
-    pnlPct: (pick(raw, "pnl_pct", "pnlPct", null) as number | null),
+    pnlPct:     (pick(raw, "pnl_pct", "pnlPct", null) as number | null),
     costSummary: cs ? mapCostSummary(cs) : null,
-    runningWac: rwArr.map(mapRunningWacEntry),
-    wacSeries: wsArr.map((w: Raw) => ({ date: w.date as string, avgCost: pick(w, "avg_cost", "avgCost", 0) as number })),
+    runningWac:  rwArr.map(mapRunningWacEntry),
+    wacSeries:   wsArr.map((w: Raw) => ({ date: w.date as string, avgCost: pick(w, "avg_cost", "avgCost", 0) as number })),
+    lastBuy:     lb ? mapLastBuy(lb) : null,
+    costImpact:  ci ? mapCostImpact(ci) : null,
   };
 }
 
@@ -360,9 +503,11 @@ function mapLotRecord(raw: Raw): LotRecord {
     tax: raw.tax as number,
     costPerShare: pick(raw, "cost_per_share", "costPerShare", 0) as number,
     totalCost: pick(raw, "total_cost", "totalCost", 0) as number,
-    marketPrice: (pick(raw, "market_price", "marketPrice", null) as number | null),
-    marketValue: (pick(raw, "market_value", "marketValue", null) as number | null),
+    marketPrice:   (pick(raw, "market_price", "marketPrice", null) as number | null),
+    marketValue:   (pick(raw, "market_value", "marketValue", null) as number | null),
     unrealizedPnl: (pick(raw, "unrealized_pnl", "unrealizedPnl", null) as number | null),
+    unrealizedPct: (pick(raw, "unrealized_pct", "unrealizedPct", null) as number | null),
+    underwaterPct: (pick(raw, "underwater_pct", "underwaterPct", null) as number | null),
   };
 }
 
@@ -466,5 +611,417 @@ export function mapLotsResponse(raw: Raw): LotsResponse {
     avgCostWac: (pick(raw, "avg_cost_wac", "avgCostWac", null) as number | null),
     lots: ((raw.lots ?? []) as Raw[]).map(mapLotRecord),
     realizedBreakdown: ((pick(raw, "realized_breakdown", "realizedBreakdown", []) as Raw[]).map(mapRealizedBreakdown)),
+  };
+}
+
+export function mapRefreshResult(raw: Raw): RefreshResult {
+  return {
+    asOf: pick(raw, "as_of", "asOf", "") as string,
+    provider: raw.provider as string,
+    requested: raw.requested as number,
+    inserted: raw.inserted as number,
+    skipped: raw.skipped as number,
+    errors: ((raw.errors ?? []) as Raw[]).map((e) => ({
+      symbol: e.symbol as string,
+      message: e.message as string,
+    })),
+    prices: ((raw.prices ?? []) as Raw[]).map((p) => ({
+      symbol: p.symbol as string,
+      date: p.date as string,
+      close: p.close as number,
+    })),
+  };
+}
+
+export function mapRefreshStatus(raw: Raw): RefreshStatus {
+  return {
+    lastRunAt: pick(raw, "last_run_at", "lastRunAt", null) as string | null,
+    provider: raw.provider as string | null,
+    asOf: pick(raw, "as_of", "asOf", null) as string | null,
+    inserted: raw.inserted as number | null,
+    skipped: raw.skipped as number | null,
+    errorsCount: pick(raw, "errors_count", "errorsCount", null) as number | null,
+    message: raw.message as string | null,
+  };
+}
+
+export function mapProviderInfo(raw: Raw): ProviderInfo {
+  return {
+    configured: raw.configured as string,
+    effective: raw.effective as string,
+    finmindTokenSet: Boolean(pick(raw, "finmind_token_set", "finmindTokenSet", false)),
+  };
+}
+
+function mapAttributionItem(raw: Raw): AttributionItem {
+  return {
+    symbol: raw.symbol as string,
+    contribution: raw.contribution as number,
+    contributionPct: (pick(raw, "contribution_pct", "contributionPct", null) as number | null),
+    unrealizedChange: pick(raw, "unrealized_change", "unrealizedChange", 0) as number,
+    realizedChange: pick(raw, "realized_change", "realizedChange", 0) as number,
+    endQty: pick(raw, "end_qty", "endQty", 0) as number,
+    endPrice: (pick(raw, "end_price", "endPrice", null) as number | null),
+    endMarketValue: (pick(raw, "end_market_value", "endMarketValue", null) as number | null),
+  };
+}
+
+export function mapAttribution(raw: Raw): Attribution {
+  return {
+    start: raw.start as string,
+    end: raw.end as string,
+    totalPnl: pick(raw, "total_pnl", "totalPnl", 0) as number,
+    items: ((raw.items ?? []) as Raw[]).map(mapAttributionItem),
+    topGainers: ((pick(raw, "top_gainers", "topGainers", []) as Raw[]).map(mapAttributionItem)),
+    topLosers: ((pick(raw, "top_losers", "topLosers", []) as Raw[]).map(mapAttributionItem)),
+  };
+}
+
+function mapDigestItem(raw: Raw): import("./types").DigestItem {
+  return {
+    symbol: raw.symbol as string,
+    contribution: raw.contribution as number,
+    contributionPct: (pick(raw, "contribution_pct", "contributionPct", null) as number | null),
+    unrealizedChange: pick(raw, "unrealized_change", "unrealizedChange", 0) as number,
+    realizedChange: pick(raw, "realized_change", "realizedChange", 0) as number,
+  };
+}
+
+export function mapDigestRecord(raw: Raw): DigestRecord {
+  return {
+    id: raw.id as number,
+    date: raw.date as string,
+    createdAt: pick(raw, "created_at", "createdAt", "") as string,
+    totalEquity: (pick(raw, "total_equity", "totalEquity", null) as number | null),
+    dailyPnl: (pick(raw, "daily_pnl", "dailyPnl", null) as number | null),
+    dailyReturnPct: (pick(raw, "daily_return_pct", "dailyReturnPct", null) as number | null),
+    externalCashflow: (pick(raw, "external_cashflow", "externalCashflow", null) as number | null),
+    marketValue: (pick(raw, "market_value", "marketValue", null) as number | null),
+    cash: (raw.cash as number | null) ?? null,
+    topContributors: ((raw.top_contributors ?? raw.topContributors) as Raw[] | null)?.map(mapDigestItem) ?? null,
+    topLosers: ((raw.top_losers ?? raw.topLosers) as Raw[] | null)?.map(mapDigestItem) ?? null,
+    alerts: ((raw.alerts ?? []) as Raw[]).map((a) => ({
+      type: a.type as string,
+      severity: a.severity as import("./types").DigestAlert["severity"],
+      message: a.message as string,
+    })),
+    notes: (raw.notes as string | null) ?? null,
+  };
+}
+
+export function mapDigestSummary(raw: Raw): DigestSummary {
+  return {
+    date: raw.date as string,
+    totalEquity: (pick(raw, "total_equity", "totalEquity", null) as number | null),
+    dailyPnl: (pick(raw, "daily_pnl", "dailyPnl", null) as number | null),
+    dailyReturnPct: (pick(raw, "daily_return_pct", "dailyReturnPct", null) as number | null),
+    notes: (raw.notes as string | null) ?? null,
+  };
+}
+
+// ── Benchmark mappers ──────────────────────────────────────────────────────────
+
+function mapBenchmarkPoint(raw: Raw): BenchmarkPoint {
+  return {
+    date: raw.date as string,
+    close: raw.close as number,
+    cumReturnPct: pick(raw, "cum_return_pct", "cumReturnPct", null) as number | null,
+  };
+}
+
+export function mapBenchmarkSeries(raw: Raw): BenchmarkSeries {
+  return {
+    bench: raw.bench as string,
+    freq: raw.freq as string,
+    start: raw.start as string,
+    end: raw.end as string,
+    records: ((raw.records ?? []) as Raw[]).map(mapBenchmarkPoint),
+    missingDays: pick(raw, "missing_days", "missingDays", null) as number | null,
+    lastQuoteDate: pick(raw, "last_quote_date", "lastQuoteDate", null) as string | null,
+  };
+}
+
+function mapBenchmarkComparePoint(raw: Raw): BenchmarkComparePoint {
+  return {
+    date: raw.date as string,
+    portfolioCumReturnPct: pick(raw, "portfolio_cum_return_pct", "portfolioCumReturnPct", null) as number | null,
+    benchCumReturnPct:     pick(raw, "bench_cum_return_pct",     "benchCumReturnPct",     null) as number | null,
+    excessCumReturnPct:    pick(raw, "excess_cum_return_pct",    "excessCumReturnPct",    null) as number | null,
+  };
+}
+
+function mapBenchmarkMetrics(raw: Raw): BenchmarkMetrics {
+  return {
+    excessReturnPct:         pick(raw, "excess_return_pct",         "excessReturnPct",         null) as number | null,
+    trackingErrorAnnualized: pick(raw, "tracking_error_annualized", "trackingErrorAnnualized", null) as number | null,
+    correlation:             pick(raw, "correlation",               "correlation",             null) as number | null,
+    informationRatio:        pick(raw, "information_ratio",         "informationRatio",        null) as number | null,
+  };
+}
+
+export function mapBenchmarkCompare(raw: Raw): BenchmarkCompare {
+  return {
+    bench:   raw.bench as string,
+    freq:    raw.freq as string,
+    start:   raw.start as string,
+    end:     raw.end as string,
+    records: ((raw.records ?? []) as Raw[]).map(mapBenchmarkComparePoint),
+    metrics: raw.metrics ? mapBenchmarkMetrics(raw.metrics as Raw) : null,
+  };
+}
+
+export function mapBenchmarkBootstrapResult(raw: Raw): BenchmarkBootstrapResult {
+  return {
+    benches:  (raw.benches ?? []) as string[],
+    start:    raw.start as string,
+    end:      raw.end as string,
+    provider: raw.provider as string,
+    inserted: raw.inserted as number,
+    skipped:  raw.skipped as number,
+    errors:   ((raw.errors ?? []) as Raw[]).map((e) => ({
+      bench:   e.bench as string,
+      message: e.message as string,
+    })),
+  };
+}
+
+export function mapBenchmarkBootstrapStatus(raw: Raw): BenchmarkBootstrapStatus {
+  return {
+    lastRunAt:   pick(raw, "last_run_at",   "lastRunAt",   null) as string | null,
+    provider:    raw.provider as string | null,
+    from:        raw.from as string | null,
+    to:          raw.to as string | null,
+    inserted:    raw.inserted as number | null,
+    skipped:     raw.skipped as number | null,
+    errorsCount: pick(raw, "errors_count", "errorsCount", null) as number | null,
+  };
+}
+
+export function mapCatalyst(raw: Raw): Catalyst {
+  return {
+    id:        raw.id as number,
+    eventType: pick(raw, "event_type", "eventType", "company") as Catalyst["eventType"],
+    symbol:    (raw.symbol as string | null) ?? null,
+    title:     raw.title as string,
+    eventDate: pick(raw, "event_date", "eventDate", null) as string | null,
+    status:    raw.status as Catalyst["status"],
+    notes:     (raw.notes as string) ?? "",
+    createdAt: pick(raw, "created_at", "createdAt", "") as string,
+    updatedAt: pick(raw, "updated_at", "updatedAt", "") as string,
+  };
+}
+
+export function mapCatalystScenario(raw: Raw): CatalystScenario {
+  return {
+    id:          raw.id as number,
+    catalystId:  pick(raw, "catalyst_id", "catalystId", 0) as number,
+    planA:       pick(raw, "plan_a", "planA", "") as string,
+    planB:       pick(raw, "plan_b", "planB", "") as string,
+    planC:       pick(raw, "plan_c", "planC", "") as string,
+    planD:       pick(raw, "plan_d", "planD", "") as string,
+    priceTarget: pick(raw, "price_target", "priceTarget", null) as number | null,
+    stopLoss:    pick(raw, "stop_loss",    "stopLoss",    null) as number | null,
+    createdAt:   pick(raw, "created_at",   "createdAt",   "") as string,
+    updatedAt:   pick(raw, "updated_at",   "updatedAt",   "") as string,
+  };
+}
+
+export function mapWatchlist(raw: Raw): Watchlist {
+  return {
+    id:          raw.id as number,
+    name:        raw.name as string,
+    description: (raw.description as string) ?? "",
+    createdAt:   pick(raw, "created_at", "createdAt", "") as string,
+    updatedAt:   pick(raw, "updated_at", "updatedAt", "") as string,
+  };
+}
+
+export function mapWatchlistItem(raw: Raw): WatchlistItem {
+  return {
+    id:           raw.id as number,
+    watchlistId:  pick(raw, "watchlist_id", "watchlistId", 0) as number,
+    symbol:       raw.symbol as string,
+    status:       raw.status as WatchlistItem["status"],
+    thesisSummary: pick(raw, "thesis_summary", "thesisSummary", "") as string,
+    addedAt:      pick(raw, "added_at", "addedAt", "") as string,
+    updatedAt:    pick(raw, "updated_at", "updatedAt", "") as string,
+  };
+}
+
+export function mapWatchlistGaps(raw: Raw): WatchlistGaps {
+  return {
+    watchlistId:             pick(raw, "watchlist_id",              "watchlistId",             0)     as number,
+    watchlistName:           pick(raw, "watchlist_name",            "watchlistName",           "")    as string,
+    activePositionCount:     pick(raw, "active_position_count",     "activePositionCount",     0)     as number,
+    requiredWatchlistCount:  pick(raw, "required_watchlist_count",  "requiredWatchlistCount",  0)     as number,
+    currentActiveItemCount:  pick(raw, "current_active_item_count", "currentActiveItemCount",  0)     as number,
+    coverageSufficient:      Boolean(pick(raw, "coverage_sufficient", "coverageSufficient",    false)),
+    gap:                     (raw.gap as number) ?? 0,
+    positionsNotInWatchlist: (pick(raw, "positions_not_in_watchlist", "positionsNotInWatchlist", []) as string[]),
+    positionsInWatchlist:    (pick(raw, "positions_in_watchlist",     "positionsInWatchlist",    []) as string[]),
+  };
+}
+
+export function mapUniverseCompany(raw: Raw): UniverseCompany {
+  return {
+    symbol:        raw.symbol as string,
+    name:          raw.name as string,
+    exchange:      (raw.exchange      as string | null) ?? null,
+    sector:        (raw.sector        as string | null) ?? null,
+    industry:      (raw.industry      as string | null) ?? null,
+    businessModel: (pick(raw, "business_model", "businessModel", null) as string | null),
+    country:       (raw.country       as string | null) ?? null,
+    currency:      (raw.currency      as string | null) ?? null,
+    note:          (raw.note          as string) ?? "",
+    createdAt:     pick(raw, "created_at", "createdAt", "") as string,
+    updatedAt:     pick(raw, "updated_at", "updatedAt", "") as string,
+  };
+}
+
+function mapCompanyThesis(raw: Raw): CompanyThesis {
+  return {
+    id:         raw.id as number,
+    symbol:     raw.symbol as string,
+    thesisType: pick(raw, "thesis_type", "thesisType", "bull") as CompanyThesis["thesisType"],
+    content:    raw.content as string,
+    createdAt:  pick(raw, "created_at", "createdAt", "") as string,
+    isActive:   Boolean(pick(raw, "is_active", "isActive", 1)),
+  };
+}
+
+function mapCompanyRelationship(raw: Raw): CompanyRelationship {
+  return {
+    id:               raw.id as number,
+    symbol:           raw.symbol as string,
+    relatedSymbol:    pick(raw, "related_symbol",    "relatedSymbol",    "") as string,
+    relationshipType: pick(raw, "relationship_type", "relationshipType", "") as CompanyRelationship["relationshipType"],
+    note:             (raw.note as string) ?? "",
+  };
+}
+
+export function mapCompanyDetail(raw: Raw): CompanyDetail {
+  return {
+    ...mapUniverseCompany(raw),
+    thesis:        ((raw.thesis        ?? []) as Raw[]).map(mapCompanyThesis),
+    relationships: ((raw.relationships ?? []) as Raw[]).map(mapCompanyRelationship),
+  };
+}
+
+export function mapLosingPosition(raw: Raw): LosingPositionItem {
+  return {
+    symbol:         raw.symbol as string,
+    qty:            raw.qty as number,
+    avgCost:        pick(raw, "avg_cost",    "avgCost",    null) as number | null,
+    lastPrice:      pick(raw, "last_price",  "lastPrice",  null) as number | null,
+    unrealizedPnl:  pick(raw, "unrealized_pnl", "unrealizedPnl", 0) as number,
+    unrealizedPct:  pick(raw, "unrealized_pct", "unrealizedPct", null) as number | null,
+    lossIfFullExit: pick(raw, "loss_if_full_exit", "lossIfFullExit", 0) as number,
+  };
+}
+
+export function mapProfitInventory(raw: Raw): ProfitInventory {
+  const s = (pick(raw, "summary", "summary", {}) as Raw);
+  return {
+    summary: {
+      grossRealizedPnl:    pick(s, "gross_realized_pnl",    "grossRealizedPnl",    0) as number,
+      positiveRealizedPnl: pick(s, "positive_realized_pnl", "positiveRealizedPnl", 0) as number,
+      availableToOffset:   pick(s, "available_to_offset",   "availableToOffset",   0) as number,
+    },
+    bySymbol: ((pick(raw, "by_symbol", "bySymbol", []) as Raw[]).map((r) => ({
+      symbol:      r.symbol as string,
+      realizedPnl: pick(r, "realized_pnl", "realizedPnl", 0) as number,
+      qty:         r.qty as number,
+    }))),
+  };
+}
+
+export function mapOffsetSimulateResult(raw: Raw): OffsetSimulateResult {
+  const lp  = pick(raw, "losing_position",  "losingPosition",  null) as Raw | null;
+  const pi  = (pick(raw, "profit_inventory", "profitInventory", {}) as Raw);
+  const sim = (raw.simulation ?? {}) as Raw;
+  const g   = (raw.guardrail  ?? {}) as Raw;
+  return {
+    asOf:             pick(raw, "as_of", "asOf", "") as string,
+    losingPosition:   lp ? mapLosingPosition(lp) : null,
+    profitInventory:  mapProfitInventory(pi),
+    simulation: {
+      symbol:                     sim.symbol as string,
+      simQty:                     pick(sim, "sim_qty",    "simQty",    0)    as number,
+      simPrice:                   pick(sim, "sim_price",  "simPrice",  null) as number | null,
+      simRealizedLoss:            pick(sim, "sim_realized_loss",            "simRealizedLoss",            null) as number | null,
+      matchedAmount:              pick(sim, "matched_amount",               "matchedAmount",               null) as number | null,
+      projectedGrossRealizedPnl:  pick(sim, "projected_gross_realized_pnl", "projectedGrossRealizedPnl",  null) as number | null,
+      commissionNotIncluded:      Boolean(pick(sim, "commission_not_included", "commissionNotIncluded", true)),
+    },
+    guardrail: {
+      passed:   Boolean(g.passed),
+      reason:   (g.reason ?? null) as OffsetSimulateResult["guardrail"]["reason"],
+      warnings: (g.warnings ?? []) as string[],
+    },
+  };
+}
+
+export function mapOverview(raw: Raw): OverviewData {
+  const p  = (raw.portfolio    ?? {}) as Raw;
+  const r  = (raw.risk         ?? {}) as Raw;
+  const wc = (raw.watchlist_coverage ?? raw.watchlistCoverage ?? {}) as Raw;
+  const uc = (raw.upcoming_catalysts ?? raw.upcomingCatalysts ?? {}) as Raw;
+  const of_ = (raw.offsetting  ?? {}) as Raw;
+
+  return {
+    portfolio: {
+      totalEquity:   pick(p, "total_equity",   "totalEquity",   0) as number,
+      cash:          p.cash as number ?? 0,
+      marketValue:   pick(p, "market_value",   "marketValue",   0) as number,
+      totalCost:     pick(p, "total_cost",     "totalCost",     0) as number,
+      unrealizedPnl: pick(p, "unrealized_pnl", "unrealizedPnl", null) as number | null,
+      unrealizedPct: pick(p, "unrealized_pct", "unrealizedPct", null) as number | null,
+      realizedPnl:   pick(p, "realized_pnl",   "realizedPnl",   0) as number,
+      positionCount: pick(p, "position_count", "positionCount", 0) as number,
+      asOf:          pick(p, "as_of",          "asOf",          "") as string,
+    },
+    risk: {
+      atRiskCount:    pick(r, "at_risk_count",    "atRiskCount",    0) as number,
+      riskFreeCount:  pick(r, "risk_free_count",  "riskFreeCount",  0) as number,
+      totalNetAtRisk: pick(r, "total_net_at_risk","totalNetAtRisk", null) as number | null,
+      positions: ((r.positions ?? []) as Raw[]).map((pos) => ({
+        symbol:        pos.symbol as string,
+        positionState: pick(pos, "position_state", "positionState", "at_risk") as "risk_free" | "at_risk",
+        netAtRisk:     pick(pos, "net_at_risk",    "netAtRisk",    null) as number | null,
+        pctRecovered:  pick(pos, "pct_recovered",  "pctRecovered", null) as number | null,
+      })),
+    },
+    watchlistCoverage: {
+      watchlists: ((wc.watchlists ?? []) as Raw[]).map((w) => ({
+        watchlistId:             pick(w, "watchlist_id",              "watchlistId",             0)  as number,
+        watchlistName:           pick(w, "watchlist_name",            "watchlistName",           "") as string,
+        activePositionCount:     pick(w, "active_position_count",     "activePositionCount",     0)  as number,
+        requiredWatchlistCount:  pick(w, "required_watchlist_count",  "requiredWatchlistCount",  0)  as number,
+        currentActiveItemCount:  pick(w, "current_active_item_count", "currentActiveItemCount",  0)  as number,
+        coverageSufficient:      Boolean(pick(w, "coverage_sufficient", "coverageSufficient",    false)),
+        gap:                     w.gap as number ?? 0,
+      })),
+      anyInsufficient: Boolean(pick(wc, "any_insufficient", "anyInsufficient", false)),
+    },
+    upcomingCatalysts: {
+      daysWindow: pick(uc, "days_window", "daysWindow", 30) as number,
+      count:      uc.count as number ?? 0,
+      items: ((uc.items ?? []) as Raw[]).map((item) => ({
+        id:          item.id as number,
+        eventType:   pick(item, "event_type",   "eventType",   "") as string,
+        symbol:      item.symbol as string | null ?? null,
+        title:       item.title as string,
+        eventDate:   pick(item, "event_date",   "eventDate",   "") as string,
+        hasScenario: Boolean(pick(item, "has_scenario", "hasScenario", false)),
+      })),
+    },
+    offsetting: {
+      losingCount:          pick(of_, "losing_count",           "losingCount",          0)    as number,
+      totalUnrealizedLoss:  pick(of_, "total_unrealized_loss",  "totalUnrealizedLoss",  0)    as number,
+      profitAvailable:      pick(of_, "profit_available",       "profitAvailable",      0)    as number,
+      netOffsetCapacity:    pick(of_, "net_offset_capacity",    "netOffsetCapacity",    0)    as number,
+    },
+    generatedAt: pick(raw, "generated_at", "generatedAt", "") as string,
+    asOf:        pick(raw, "as_of",        "asOf",        "") as string,
   };
 }

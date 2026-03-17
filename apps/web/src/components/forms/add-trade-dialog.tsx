@@ -62,6 +62,7 @@ export function AddTradeDialog({ children }: { children: React.ReactNode }) {
     try {
       await mutation.mutateAsync(data);
       toast.success(`${data.side.toUpperCase()} ${data.qty} ${data.symbol} @ ${data.price}`);
+      toast.info(`Fetching latest price for ${data.symbol}…`, { duration: 3000 });
       reset({ date: new Date().toISOString().slice(0, 10), side: "buy", commission: 0, tax: 0 });
       setSide("buy");
       setOpen(false);

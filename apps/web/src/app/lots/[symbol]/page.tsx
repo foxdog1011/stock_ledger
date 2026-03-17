@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fmtMoney, fmtDate, pnlClass } from "@/lib/format";
+import { fmtMoney, fmtDate, fmtPct, pnlClass } from "@/lib/format";
+import { LotsBubbleChart } from "@/components/charts/lots-bubble-chart";
 import type { RealizedBreakdown } from "@/lib/types";
 
 type Method = "fifo" | "lifo" | "wac";
@@ -110,6 +111,69 @@ export default function LotsPage() {
             </Card>
           </div>
 
+          {/* Chart */}
+          {data.lots.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Cost / Share vs WAC &amp; Market Price</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LotsBubbleChart lots={data.lots} avgCostWac={data.avgCostWac} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Lots Highlights */}
+          {data.lots.length > 0 && data.lots[0].unrealizedPct != null && (() => {
+            const sorted = [...data.lots].sort((a, b) => (b.unrealizedPct ?? 0) - (a.unrealizedPct ?? 0));
+            const best  = sorted[0];
+            const worst = sorted[sorted.length - 1];
+            const underwaterCount = data.lots.filter((l) => (l.underwaterPct ?? 0) > 0).length;
+            const totalUnreal = data.lots.reduce((s, l) => s + (l.unrealizedPnl ?? 0), 0);
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Lots Highlights</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Best Lot</p>
+                      <p className="font-medium">#{best.lotId} <span className="text-xs text-muted-foreground">{fmtDate(best.buyDate)}</span></p>
+                      <p className={`tabular-nums text-xs font-semibold ${pnlClass(best.unrealizedPct)}`}>
+                        {fmtPct(best.unrealizedPct)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Worst Lot</p>
+                      <p className="font-medium">#{worst.lotId} <span className="text-xs text-muted-foreground">{fmtDate(worst.buyDate)}</span></p>
+                      <p className={`tabular-nums text-xs font-semibold ${pnlClass(worst.unrealizedPct)}`}>
+                        {fmtPct(worst.unrealizedPct)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Underwater Lots</p>
+                      <p className="font-medium tabular-nums">
+                        {underwaterCount} / {data.lots.length}
+                      </p>
+                      {underwaterCount > 0 && (
+                        <p className="text-xs text-red-500">
+                          {((underwaterCount / data.lots.length) * 100).toFixed(0)}% of lots
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Total Unrealized</p>
+                      <p className={`font-semibold tabular-nums ${pnlClass(totalUnreal)}`}>
+                        {totalUnreal >= 0 ? "+" : ""}{fmtMoney(totalUnreal)}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* Lots table */}
           <Card>
             <CardHeader>
@@ -132,6 +196,7 @@ export default function LotsPage() {
                       <TableHead className="text-right">Total Cost</TableHead>
                       <TableHead className="text-right">Market Value</TableHead>
                       <TableHead className="text-right">Unrealized P&L</TableHead>
+                      <TableHead className="text-right">Return %</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -160,6 +225,9 @@ export default function LotsPage() {
                         </TableCell>
                         <TableCell className={`text-right tabular-nums ${pnlClass(lot.unrealizedPnl)}`}>
                           {fmtMoney(lot.unrealizedPnl)}
+                        </TableCell>
+                        <TableCell className={`text-right tabular-nums ${pnlClass(lot.unrealizedPct)}`}>
+                          {lot.unrealizedPct != null ? fmtPct(lot.unrealizedPct) : "—"}
                         </TableCell>
                       </TableRow>
                     ))}

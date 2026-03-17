@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtMoney, fmtPct, pnlClass, fmtDate } from "@/lib/format";
 import { WacMiniChart } from "@/components/charts/wac-mini-chart";
+import { CostImpactChart } from "@/components/charts/cost-impact-chart";
 import { ExternalLink } from "lucide-react";
 import type { PositionDetailItem } from "@/lib/types";
 
@@ -214,6 +215,50 @@ export default function PositionsPage() {
                                   Avg Cost History
                                 </p>
                                 <WacMiniChart data={detail.wacSeries} />
+                              </div>
+                            )}
+
+                            {/* Block 4: Cost Impact (last buy) */}
+                            {detail.costImpact && (
+                              <div>
+                                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                                  Cost Impact — Last Buy
+                                </p>
+                                {detail.lastBuy && (
+                                  <div className="flex flex-wrap gap-4 text-xs mb-3 rounded-md bg-muted/40 px-3 py-2">
+                                    <span>Date: <b>{fmtDate(detail.lastBuy.date)}</b></span>
+                                    <span>Qty: <b className="tabular-nums">{detail.lastBuy.qty}</b></span>
+                                    <span>Price: <b className="tabular-nums">{fmtMoney(detail.lastBuy.price, 4)}</b></span>
+                                    <span>Fees: <b className="tabular-nums">{fmtMoney(detail.lastBuy.commission + detail.lastBuy.tax)}</b></span>
+                                  </div>
+                                )}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                                  {[
+                                    { label: "Prev Avg Cost", value: detail.costImpact.prevAvgCost != null ? fmtMoney(detail.costImpact.prevAvgCost, 4) : "—", color: false },
+                                    { label: "New Avg Cost",  value: fmtMoney(detail.costImpact.newAvgCost, 4), color: false },
+                                    { label: "Δ Avg Cost",    raw: detail.costImpact.deltaAvgCost, pct: detail.costImpact.deltaAvgCostPct },
+                                    { label: "Unrealized Impact", raw: detail.costImpact.impactUnrealizedPnl, pct: null },
+                                  ].map((s, i) => (
+                                    <div key={i} className="rounded-md bg-muted/40 p-3">
+                                      <p className="text-xs text-muted-foreground mb-0.5">{s.label}</p>
+                                      {"raw" in s ? (
+                                        <p className={`text-sm font-semibold tabular-nums ${pnlClass(s.raw)}`}>
+                                          {s.raw != null
+                                            ? `${s.raw >= 0 ? "+" : ""}${fmtMoney(s.raw, 4)}`
+                                            : "—"}
+                                          {s.pct != null && (
+                                            <span className="ml-1 text-xs opacity-70">
+                                              ({fmtPct(s.pct)})
+                                            </span>
+                                          )}
+                                        </p>
+                                      ) : (
+                                        <p className="text-sm font-semibold tabular-nums">{s.value}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                                <CostImpactChart impact={detail.costImpact} lastPrice={p.lastPrice} />
                               </div>
                             )}
                           </div>
