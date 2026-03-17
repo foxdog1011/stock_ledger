@@ -18,7 +18,7 @@ _SQLITE_MAGIC = b"SQLite format 3\x00"
 @router.get("/backup/db", summary="Download the SQLite database file")
 def backup_db(ledger: StockLedger = Depends(get_ledger)):
     """Stream the raw SQLite file as ``ledger.db``."""
-    db_path: Path = ledger._db_path
+    db_path: Path = ledger.db_path
     if not db_path.exists():
         raise HTTPException(status_code=404, detail="Database file not found")
     return FileResponse(
@@ -50,7 +50,7 @@ async def restore_db(
     if not content.startswith(_SQLITE_MAGIC):
         raise HTTPException(status_code=400, detail="Not a valid SQLite database file")
 
-    db_path: Path = ledger._db_path
+    db_path: Path = ledger.db_path
     tmp_path = db_path.with_suffix(".restore_tmp")
 
     try:

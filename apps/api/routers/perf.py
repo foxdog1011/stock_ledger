@@ -1,4 +1,4 @@
-"""Performance summary and risk metrics endpoints."""
+"""Performance summary, risk metrics, and attribution endpoints."""
 from __future__ import annotations
 
 import math
@@ -57,7 +57,7 @@ def perf_summary(
     pnl_ex_cashflow = end_equity - start_equity - external_cashflow_sum
 
     # Fees from trades in range
-    db_path = str(ledger._db_path)
+    db_path = str(ledger.db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
@@ -94,6 +94,67 @@ def perf_summary(
         "fees_total": fees_total,
         "fees_commission": fees_commission,
         "fees_tax": fees_tax,
+    }
+
+
+@router.get("/perf/attribution", summary="Symbol-level PnL attribution for a date range")
+def perf_attribution(
+    start: str = Query(..., description="YYYY-MM-DD"),
+    end: str = Query(..., description="YYYY-MM-DD"),
+    top_n: int = Query(5, ge=1, le=20, description="Number of top/bottom contributors"),
+    ledger: StockLedger = Depends(get_ledger),
+) -> dict:
+    """
+    Break down portfolio P&L by symbol for [start, end].
+
+    Contribution = (unrealized_pnl_end − unrealized_pnl_start) + realized_pnl_delta
+
+    Returns all symbols sorted by contribution (desc), plus
+    `top_gainers` (top N) and `top_losers` (bottom N) sub-lists.
+    """
+    pos_start = {p["symbol"]: p for p in ledger.all_positions_pnl(as_of=start, open_only=False)}
+    pos_end   = {p["symbol"]: p for p in ledger.all_positions_pnl(as_of=end,   open_only=False)}
+
+    all_syms = set(pos_start) | set(pos_end)
+    items: list[dict] = []
+
+    for sym in all_syms:
+        ps = pos_start.get(sym, {})
+        pe = pos_end.get(sym, {})
+        unrealized_start = ps.get("unrealized_pnl") or 0.0
+        unrealized_end   = pe.get("unrealized_pnl") or 0.0
+        realized_start   = ps.get("realized_pnl") or 0.0
+        realized_end     = pe.get("realized_pnl") or 0.0
+
+        unrealized_change = unrealized_end - unrealized_start
+        realized_change   = realized_end   - realized_start
+        contribution      = round(unrealized_change + realized_change, 2)
+
+        items.append({
+            "symbol":            sym,
+            "contribution":      contribution,
+            "unrealized_change": round(unrealized_change, 2),
+            "realized_change":   round(realized_change, 2),
+            "end_qty":           pe.get("qty", 0.0),
+            "end_price":         pe.get("last_price"),
+            "end_market_value":  pe.get("market_value"),
+        })
+
+    items.sort(key=lambda x: x["contribution"], reverse=True)
+    total_pnl = round(sum(x["contribution"] for x in items), 2)
+
+    # Attach contribution_pct (% of |total_pnl|) for display
+    for item in items:
+        denom = abs(total_pnl) if total_pnl else 0
+        item["contribution_pct"] = round(item["contribution"] / denom * 100, 2) if denom else None
+
+    return {
+        "start":        start,
+        "end":          end,
+        "total_pnl":    total_pnl,
+        "items":        items,
+        "top_gainers":  items[:top_n],
+        "top_losers":   list(reversed(items[-top_n:])) if len(items) >= top_n else list(reversed(items)),
     }
 
 

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   useEquitySnapshot,
   useEquityCurve,
@@ -12,6 +12,9 @@ import {
   usePerfSummary,
   useRiskMetrics,
   useRebalanceCheck,
+  useAttribution,
+  useDigestList,
+  useBenchmarkCompare,
 } from "@/hooks/use-queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +40,10 @@ const DonutChart = dynamic(
 );
 const DailyPnlChart = dynamic(
   () => import("@/components/charts/daily-pnl-chart").then((m) => m.DailyPnlChart),
+  { ssr: false, loading: () => <Skeleton className="h-[280px] w-full" /> },
+);
+const BenchmarkCompareChart = dynamic(
+  () => import("@/components/charts/benchmark-compare-chart").then((m) => m.BenchmarkCompareChart),
   { ssr: false, loading: () => <Skeleton className="h-[280px] w-full" /> },
 );
 
@@ -263,6 +270,230 @@ function PerfRiskSection({ start, end }: { start: string; end: string }) {
   );
 }
 
+// ── Top Contributors ──────────────────────────────────────────────────────────
+
+function TopContributors({ start, end }: { start: string; end: string }) {
+  const attr = useAttribution({ start, end, topN: 5 });
+
+  if (attr.isLoading) return <Skeleton className="h-32 w-full" />;
+  if (attr.isError || !attr.data) return null;
+
+  const { topGainers, topLosers, totalPnl } = attr.data;
+  const all = [...topGainers, ...topLosers.filter((l) => !topGainers.find((g) => g.symbol === l.symbol))];
+  if (!all.length) return null;
+
+  return (
+    <div className="grid md:grid-cols-2 gap-4">
+      {[
+        { title: "Top Contributors", items: topGainers, positive: true },
+        { title: "Top Detractors",   items: topLosers,  positive: false },
+      ].map(({ title, items, positive }) => (
+        <Card key={title}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex justify-between">
+              <span>{title}</span>
+              <span className="text-xs text-muted-foreground font-normal">
+                Total P&L: <span className={pnlClass(totalPnl)}>${fmtMoney(totalPnl)}</span>
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ul className="divide-y">
+              {items.map((item) => (
+                <li key={item.symbol} className="flex items-center justify-between px-4 py-2 text-sm hover:bg-muted/30 transition-colors">
+                  <Link
+                    href={`/positions?symbol=${item.symbol}`}
+                    className="font-mono font-medium hover:underline"
+                  >
+                    {item.symbol}
+                  </Link>
+                  <div className="text-right">
+                    <span className={`font-semibold tabular-nums ${pnlClass(item.contribution)}`}>
+                      {item.contribution >= 0 ? "+" : ""}${fmtMoney(item.contribution)}
+                    </span>
+                    {item.contributionPct != null && (
+                      <span className="ml-1.5 text-xs text-muted-foreground">
+                        ({item.contributionPct.toFixed(1)}%)
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {!items.length && (
+                <li className="px-4 py-3 text-xs text-muted-foreground text-center">No data</li>
+              )}
+            </ul>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ── Latest Digest Banner ──────────────────────────────────────────────────────
+
+function LatestDigestBanner() {
+  const list = useDigestList({ limit: 1 });
+  const latest = list.data?.[0];
+  if (!latest) return null;
+
+  return (
+    <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/40 text-sm">
+      <div className="flex items-center gap-3">
+        <span className="font-medium">Latest Digest</span>
+        <span className="text-muted-foreground">{latest.date}</span>
+        {latest.dailyPnl != null && (
+          <span className={`tabular-nums font-semibold ${pnlClass(latest.dailyPnl)}`}>
+            {latest.dailyPnl >= 0 ? "+" : ""}${fmtMoney(latest.dailyPnl)}
+            {latest.dailyReturnPct != null && (
+              <span className="ml-1 text-xs font-normal opacity-80">
+                ({latest.dailyReturnPct >= 0 ? "+" : ""}{latest.dailyReturnPct.toFixed(2)}%)
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+      <Link
+        href="/digest"
+        className="px-3 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+      >
+        View Digest →
+      </Link>
+    </div>
+  );
+}
+
+// ── Benchmark Section ─────────────────────────────────────────────────────────
+
+const BENCH_OPTIONS = ["0050", "SPY", "QQQ", "TAIEX"] as const;
+
+function BenchmarkSection({ start, end, freq }: { start: string; end: string; freq: string }) {
+  const [bench, setBench] = useState<string>("0050");
+  const params = useMemo(
+    () => ({ bench, start, end, freq }),
+    [bench, start, end, freq],
+  );
+  const compare = useBenchmarkCompare(params);
+
+  const hasData = (compare.data?.records?.length ?? 0) > 0;
+  const metrics = compare.data?.metrics;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Benchmark</h2>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">vs.</span>
+          <div className="inline-flex rounded-md border bg-background overflow-hidden text-xs font-medium">
+            {BENCH_OPTIONS.map((opt, i) => (
+              <button
+                key={opt}
+                onClick={() => setBench(opt)}
+                className={cn(
+                  "px-3 py-1.5 transition-colors",
+                  i > 0 && "border-l",
+                  bench === opt
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted text-foreground",
+                )}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {compare.isLoading && <Skeleton className="h-[280px] w-full rounded-lg" />}
+
+      {!compare.isLoading && !hasData && (
+        <Card>
+          <CardContent className="py-10 text-center space-y-3">
+            <p className="text-muted-foreground text-sm">
+              No price data found for{" "}
+              <span className="font-mono font-medium">{bench}</span> in this date range.
+            </p>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              Bootstrap historical benchmark data (2016→today) in one click.
+            </p>
+            <Link
+              href="/settings#benchmark"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              Bootstrap Benchmark Data →
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasData && (
+        <>
+          <Card>
+            <CardContent className="pt-4">
+              <BenchmarkCompareChart
+                data={compare.data!.records}
+                bench={bench}
+                freq={freq}
+              />
+            </CardContent>
+          </Card>
+
+          {metrics && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                {
+                  title: "Excess Return",
+                  value: metrics.excessReturnPct != null ? fmtPct(metrics.excessReturnPct) : "N/A",
+                  sub: "cumulative vs benchmark",
+                  valueClass: pnlClass(metrics.excessReturnPct),
+                },
+                {
+                  title: "Tracking Error",
+                  value: metrics.trackingErrorAnnualized != null
+                    ? `${metrics.trackingErrorAnnualized.toFixed(2)}%`
+                    : "N/A",
+                  sub: "annualised",
+                },
+                {
+                  title: "Correlation",
+                  value: metrics.correlation != null
+                    ? metrics.correlation.toFixed(3)
+                    : "N/A",
+                  sub: "period returns",
+                },
+                {
+                  title: "Info. Ratio",
+                  value: metrics.informationRatio != null
+                    ? metrics.informationRatio.toFixed(3)
+                    : "N/A",
+                  sub: "annualised excess / TE",
+                  valueClass: pnlClass(metrics.informationRatio),
+                },
+              ].map((c) => (
+                <Card key={c.title}>
+                  <CardHeader className="pb-1 pt-3 px-4">
+                    <CardTitle className="text-xs font-medium text-muted-foreground">
+                      {c.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-3 px-4">
+                    <div className={cn("text-lg font-bold tabular-nums", c.valueClass)}>
+                      {c.value}
+                    </div>
+                    {c.sub && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PortfolioPage() {
@@ -289,10 +520,11 @@ export default function PortfolioPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Portfolio</h1>
 
-      {/* Alerts row: To-Do + Rebalance */}
+      {/* Alerts row: To-Do + Rebalance + Digest Banner */}
       <div className="space-y-2">
         <TodoBanner />
         <RebalanceAlerts />
+        <LatestDigestBanner />
       </div>
 
       {/* Stat Cards */}
@@ -431,6 +663,12 @@ export default function PortfolioPage() {
         </div>
       </div>
 
+      {/* Top Contributors */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">Top Contributors</h2>
+        <TopContributors start={curveParams.start} end={curveParams.end} />
+      </div>
+
       {/* Performance & Risk */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -439,6 +677,13 @@ export default function PortfolioPage() {
         </div>
         <PerfRiskSection start={curveParams.start} end={curveParams.end} />
       </div>
+
+      {/* Benchmark Comparison */}
+      <BenchmarkSection
+        start={curveParams.start}
+        end={curveParams.end}
+        freq={curveParams.freq}
+      />
 
       {/* Positions table */}
       <div className="space-y-3">

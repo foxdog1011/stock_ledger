@@ -1,16 +1,45 @@
 """Trade endpoints."""
+import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
 
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+
+from ..config import AUTO_REFRESH_QUOTES_ON_TRADE, QUOTE_PROVIDER
 from ..deps import get_ledger
 from ..schemas import AddTradeIn
 from ledger import StockLedger
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _bg_refresh_for_trade(symbol: str, as_of: str, ledger: StockLedger) -> None:
+    """Background task: fetch a quote for *symbol* on *as_of* after a new trade."""
+    try:
+        from ..services.quotes_service import refresh_quotes_for_symbols
+        result = refresh_quotes_for_symbols(
+            ledger=ledger,
+            symbols=[symbol],
+            as_of=as_of,
+            provider_name=QUOTE_PROVIDER,
+            trigger="trade",
+            skip_if_fresh=True,
+            max_age_days=2,
+        )
+        logger.info(
+            "Trade-triggered refresh: symbol=%s as_of=%s inserted=%d skipped=%d errors=%d",
+            symbol, as_of, result.inserted, result.skipped, len(result.errors),
+        )
+    except Exception:
+        logger.exception("Trade-triggered refresh failed for %s", symbol)
 
 
 @router.post("/trades", status_code=201, summary="Record a buy or sell trade")
-def add_trade(body: AddTradeIn, ledger: StockLedger = Depends(get_ledger)):
+def add_trade(
+    body: AddTradeIn,
+    background_tasks: BackgroundTasks,
+    ledger: StockLedger = Depends(get_ledger),
+):
     """
     Record a stock trade.
 
@@ -19,6 +48,9 @@ def add_trade(body: AddTradeIn, ledger: StockLedger = Depends(get_ledger)):
     - **sell** → cash += qty × price − commission
 
     Returns 400 if cash or share balance is insufficient.
+
+    When `AUTO_REFRESH_QUOTES_ON_TRADE=1` (default), a background task is
+    queued to fetch the latest closing price for the traded symbol.
     """
     try:
         ledger.add_trade(
@@ -33,6 +65,15 @@ def add_trade(body: AddTradeIn, ledger: StockLedger = Depends(get_ledger)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Auto-refresh quote in background (non-blocking)
+    if AUTO_REFRESH_QUOTES_ON_TRADE:
+        background_tasks.add_task(
+            _bg_refresh_for_trade,
+            symbol=body.symbol.upper(),
+            as_of=body.date,
+            ledger=ledger,
+        )
 
     cash_after = ledger.cash_balance(as_of=body.date)
     qty_after = ledger.position(body.symbol, as_of=body.date)

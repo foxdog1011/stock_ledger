@@ -19,6 +19,7 @@ WORKDIR /app
 
 # Source code
 COPY ledger/   ./ledger/
+COPY domain/   ./domain/
 COPY apps/api/ ./apps/api/
 COPY apps/__init__.py ./apps/__init__.py
 

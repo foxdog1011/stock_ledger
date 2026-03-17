@@ -38,7 +38,7 @@ def quotes_todo(
     positions = ledger.positions(as_of=as_of)
     result: list[dict] = []
 
-    db_path = str(ledger._db_path)
+    db_path = str(ledger.db_path)
     for symbol, qty in positions.items():
         if qty <= 0:
             continue
