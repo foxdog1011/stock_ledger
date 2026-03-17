@@ -112,7 +112,7 @@ def rebalance_check(
         )
 
     # Stale quotes
-    db_path = str(ledger._db_path)
+    db_path = str(ledger.db_path)
     stale_syms: list[str] = []
     as_of_dt = datetime.strptime(as_of, "%Y-%m-%d").date()
     for sym in positions:
