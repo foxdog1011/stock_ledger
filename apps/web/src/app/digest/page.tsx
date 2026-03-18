@@ -184,7 +184,7 @@ function DigestRow({ item }: { item: DigestSummary }) {
           )}
           {item.notes && (
             <span className="text-xs text-muted-foreground italic truncate max-w-[200px]">
-              "{item.notes}"
+              &quot;{item.notes}&quot;
             </span>
           )}
         </div>
