@@ -20,7 +20,7 @@ from .tz import TZ
 from .routers import (
     cash, demo, equity, positions, quotes, trades, daily, lots,
     todo, perf, rebalance, export_import, backup, benchmark, risk, execution,
-    universe, watchlist, catalyst, overview,
+    universe, watchlist, catalyst, overview, chat,
 )
 from .routers import quotes_refresh, digest as digest_router
 
@@ -149,6 +149,7 @@ app.include_router(universe.router,       prefix=PREFIX, tags=["universe"])
 app.include_router(watchlist.router,      prefix=PREFIX, tags=["watchlist"])
 app.include_router(catalyst.router,      prefix=PREFIX, tags=["catalyst"])
 app.include_router(overview.router,      prefix=PREFIX, tags=["overview"])
+app.include_router(chat.router,          prefix=PREFIX, tags=["chat"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
