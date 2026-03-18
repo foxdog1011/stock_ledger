@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { Nav } from "@/components/Nav";
 import { Fab } from "@/components/Fab";
+import { JarvisPanel } from "@/components/JarvisPanel";
 
 export const metadata: Metadata = {
   title: {
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Nav />
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</main>
           <Fab />
+          <JarvisPanel />
         </Providers>
       </body>
     </html>
