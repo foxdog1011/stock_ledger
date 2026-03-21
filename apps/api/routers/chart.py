@@ -1,18 +1,57 @@
 """Price chart + technical indicators endpoint.
 
-Returns historical close prices from the `prices` table plus server-side
-computed MA20, MA60, RSI-14, and KD (stochastic 9,3,3).
+Returns historical OHLCV from Yahoo Finance plus server-side computed
+MA20, MA60, RSI-14, and KD (stochastic 9,3,3).
 """
 from __future__ import annotations
 
-import sqlite3
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..config import DB_PATH
-
 router = APIRouter()
+
+
+def _tw_yf_ticker(symbol: str) -> str:
+    if symbol.isdigit():
+        return f"{symbol}.TW"
+    return symbol
+
+
+def _fetch_closes(symbol: str, days: int, as_of: Optional[str] = None) -> tuple[list[str], list[float]]:
+    """Return (dates, closes) from Yahoo Finance in ascending order."""
+    try:
+        import yfinance as yf
+
+        warmup = 80
+        end = date.fromisoformat(as_of) if as_of else date.today()
+        start = end - timedelta(days=days + warmup + 90)
+
+        yf_sym = _tw_yf_ticker(symbol)
+        hist = yf.Ticker(yf_sym).history(start=str(start), end=str(end), auto_adjust=True)
+
+        if hist.empty and symbol.isdigit():
+            hist = yf.Ticker(f"{symbol}.TWO").history(start=str(start), end=str(end), auto_adjust=True)
+
+        if hist.empty:
+            return [], []
+
+        dates = [idx.strftime("%Y-%m-%d") for idx in hist.index]
+        closes = [float(row["Close"]) for _, row in hist.iterrows()]
+
+        if as_of:
+            pairs = [(d, c) for d, c in zip(dates, closes) if d <= as_of]
+            if pairs:
+                dates, closes = zip(*pairs)  # type: ignore[assignment]
+                dates, closes = list(dates), list(closes)
+            else:
+                return [], []
+
+        return dates, closes
+
+    except Exception:
+        return [], []
 
 
 def _moving_average(values: list[float], n: int) -> list[Optional[float]]:
@@ -96,30 +135,10 @@ def get_chart(
     - K / D (stochastic 9,3,3)
     """
     sym = symbol.upper()
-    with sqlite3.connect(DB_PATH) as con:
-        con.row_factory = sqlite3.Row
-        # Need extra rows for indicator warm-up (MA60 needs 60 rows before the window)
-        warmup = 60
-        if as_of:
-            rows = con.execute(
-                "SELECT date, close FROM prices WHERE symbol=? AND date<=? "
-                "ORDER BY date DESC LIMIT ?",
-                (sym, as_of, days + warmup),
-            ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT date, close FROM prices WHERE symbol=? "
-                "ORDER BY date DESC LIMIT ?",
-                (sym, days + warmup),
-            ).fetchall()
+    dates, closes = _fetch_closes(sym, days, as_of)
 
-    if not rows:
+    if not dates:
         raise HTTPException(status_code=404, detail=f"No price data for {sym}")
-
-    # Reverse to chronological order
-    rows = list(reversed(rows))
-    dates = [r["date"] for r in rows]
-    closes = [float(r["close"]) for r in rows]
 
     ma20 = _moving_average(closes, 20)
     ma60 = _moving_average(closes, 60)

@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import deps
 from .tz import TZ
 from .routers import (
-    cash, demo, equity, positions, quotes, trades, daily, lots,
+    cash, demo, equity, positions, trades, daily, lots,
     todo, perf, rebalance, export_import, backup, benchmark, risk, execution,
     universe, watchlist, catalyst, overview, chat, alerts, chip, rolling,
     chart, revenue, allocation, screener, anomaly,
@@ -251,7 +251,6 @@ app.include_router(cash.router,           prefix=PREFIX, tags=["cash"])
 app.include_router(trades.router,         prefix=PREFIX, tags=["trades"])
 app.include_router(positions.router,      prefix=PREFIX, tags=["positions"])
 app.include_router(equity.router,         prefix=PREFIX, tags=["equity"])
-app.include_router(quotes.router,         prefix=PREFIX, tags=["quotes"])
 app.include_router(demo.router,           prefix=PREFIX, tags=["demo"])
 app.include_router(daily.router,          prefix=PREFIX, tags=["equity"])
 app.include_router(lots.router,           prefix=PREFIX, tags=["lots"])
