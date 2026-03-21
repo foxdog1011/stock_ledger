@@ -16,63 +16,8 @@ from fastapi import APIRouter, HTTPException, Query
 from ..config import DB_PATH
 from analysis.anomaly_detector import detect_anomalies
 
+
 router = APIRouter()
-
-# ── Volume enrichment via yfinance ────────────────────────────────────────────
-
-def _try_enrich_volume(rows: list[dict], symbol: str) -> list[dict]:
-    """Attempt to fill in volume from Yahoo Finance when DB has no volume data.
-
-    Falls back silently if yfinance is not installed or the fetch fails.
-    Only enriches when the majority of rows have volume == 0.
-    """
-    if not rows:
-        return rows
-
-    zero_count = sum(1 for r in rows if r["volume"] == 0)
-    if zero_count < len(rows) * 0.8:
-        # Volume data already exists in DB — no enrichment needed
-        return rows
-
-    try:
-        import yfinance as yf  # optional dependency
-
-        start = rows[0]["date"]
-        end_date = rows[-1]["date"]
-
-        # Taiwan stocks need .TW (TWSE) or .TWO (TPEX) suffix on Yahoo Finance
-        def _yf_symbol(sym: str) -> str:
-            if sym.isdigit():
-                return f"{sym}.TW"
-            return sym
-
-        yf_sym = _yf_symbol(symbol)
-        ticker = yf.Ticker(yf_sym)
-        hist = ticker.history(start=start, end=end_date, auto_adjust=True)
-
-        # Fallback to .TWO for OTC-listed Taiwan stocks
-        if hist.empty and symbol.isdigit():
-            ticker = yf.Ticker(f"{symbol}.TWO")
-            hist = ticker.history(start=start, end=end_date, auto_adjust=True)
-
-        if hist.empty:
-            return rows
-
-        # Build date → volume lookup
-        vol_map: dict[str, float] = {}
-        for idx, row_hist in hist.iterrows():
-            date_str = idx.strftime("%Y-%m-%d")
-            vol_map[date_str] = float(row_hist.get("Volume", 0) or 0)
-
-        enriched = []
-        for r in rows:
-            v = vol_map.get(r["date"], r["volume"])
-            enriched.append({**r, "volume": v})
-        return enriched
-
-    except Exception:
-        # Any failure — just return original rows without volume
-        return rows
 
 
 def _tw_yf_ticker(symbol: str) -> str:
@@ -83,9 +28,9 @@ def _tw_yf_ticker(symbol: str) -> str:
 
 
 def _fetch_yfinance_history(symbol: str, days: int) -> list[dict]:
-    """Fetch historical OHLCV from Yahoo Finance as a fallback data source.
+    """Fetch historical OHLCV from Yahoo Finance.
 
-    Used when the local DB has insufficient rows for anomaly detection.
+    Supports US stocks and Taiwan stocks (.TW/.TWO suffix appended automatically).
     Returns rows in ascending date order, never raises.
     """
     try:
@@ -122,66 +67,20 @@ def _fetch_yfinance_history(symbol: str, days: int) -> list[dict]:
 
 
 def _load_prices(symbol: str, days: int, as_of: Optional[str] = None) -> list[dict]:
-    """Load price rows, joining volume from chip_data if available.
+    """Fetch price history for anomaly detection directly from Yahoo Finance.
 
-    Falls back to Yahoo Finance when the DB has fewer than 25 rows,
-    which is common for Taiwan stocks that haven't been backfilled.
+    Yahoo Finance covers both US stocks and Taiwan stocks (appends .TW/.TWO
+    automatically), so we no longer depend on the local DB having historical
+    data backfilled.  The as_of parameter filters results to a specific date
+    cutoff for back-testing scenarios.
     """
     warmup = 80  # extra rows for rolling window warm-up
-    with sqlite3.connect(DB_PATH) as con:
-        con.row_factory = sqlite3.Row
-        limit = days + warmup
+    rows = _fetch_yfinance_history(symbol, days + warmup)
 
-        # Check if chip_data table exists for volume enrichment
-        has_chip = bool(con.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chip_data'"
-        ).fetchone())
+    if as_of and rows:
+        rows = [r for r in rows if r["date"] <= as_of]
 
-        if has_chip:
-            vol_join = "LEFT JOIN chip_data c ON c.symbol=p.symbol AND c.date=p.date"
-            vol_col = "COALESCE(c.volume, 0) as volume"
-        else:
-            vol_join = ""
-            vol_col = "0 as volume"
-
-        base_sql = (
-            f"SELECT p.date, p.close, {vol_col} FROM prices p {vol_join} "
-            "WHERE p.symbol=? "
-        )
-        if as_of:
-            rows = con.execute(
-                base_sql + "AND p.date<=? ORDER BY p.date DESC LIMIT ?",
-                (symbol, as_of, limit),
-            ).fetchall()
-        else:
-            rows = con.execute(
-                base_sql + "ORDER BY p.date DESC LIMIT ?",
-                (symbol, limit),
-            ).fetchall()
-
-    if not rows:
-        db_rows: list[dict] = []
-    else:
-        db_rows = [
-            {"date": r["date"], "close": float(r["close"]), "volume": float(r["volume"] or 0)}
-            for r in reversed(rows)
-        ]
-
-    # If DB has insufficient data, supplement with Yahoo Finance history
-    if len(db_rows) < 25:
-        yf_rows = _fetch_yfinance_history(symbol, days + warmup)
-        if yf_rows:
-            # Merge: yfinance as base, override with any DB rows (more authoritative)
-            db_date_map = {r["date"]: r for r in db_rows}
-            merged = []
-            for r in yf_rows:
-                if r["date"] in db_date_map:
-                    merged.append(db_date_map[r["date"]])
-                else:
-                    merged.append(r)
-            return merged
-
-    return db_rows
+    return rows
 
 
 def _active_position_symbols() -> list[str]:
@@ -218,10 +117,9 @@ def get_anomaly_batch(
 
     for sym in symbols:
         try:
-            raw_rows = _load_prices(sym, days)
-            if len(raw_rows) < 25:
+            rows = _load_prices(sym, days)
+            if len(rows) < 25:
                 continue
-            rows = _try_enrich_volume(raw_rows, sym)
             result = detect_anomalies(
                 rows=rows,
                 method="both",
@@ -281,7 +179,8 @@ def get_anomaly(
     No fixed contamination ratio — threshold adapts to the actual data distribution.
     Requires scikit-learn (gracefully disabled if not installed).
 
-    Volume is enriched from Yahoo Finance when DB has no volume data.
+    Price and volume data is fetched directly from Yahoo Finance (supports both
+    US stocks and Taiwan stocks via .TW/.TWO suffix).
 
     Returns:
     - `zscore_anomalies`: list of Z-score flagged dates
@@ -289,7 +188,6 @@ def get_anomaly(
     - `summary`: human-readable digest
     - `latest_features`: current feature snapshot
     - `sklearn_available`: whether Autoencoder was available
-    - `volume_enriched`: whether yfinance volume was used
     """
     if method not in ("zscore", "autoencoder", "both"):
         raise HTTPException(
@@ -298,22 +196,16 @@ def get_anomaly(
         )
 
     sym = symbol.upper()
-    raw_rows = _load_prices(sym, days, as_of)
+    rows = _load_prices(sym, days, as_of)
 
-    if not raw_rows:
+    if not rows:
         raise HTTPException(status_code=404, detail=f"No price data for {sym}")
 
-    if len(raw_rows) < 25:
+    if len(rows) < 25:
         raise HTTPException(
             status_code=422,
-            detail=f"Insufficient data: only {len(raw_rows)} rows, need at least 25",
+            detail=f"Insufficient data: only {len(rows)} rows, need at least 25",
         )
-
-    # Enrich volume from Yahoo Finance if DB has none
-    rows = _try_enrich_volume(raw_rows, sym)
-    volume_enriched = rows is not raw_rows or any(
-        rows[i]["volume"] != raw_rows[i]["volume"] for i in range(len(rows))
-    )
 
     result = detect_anomalies(
         rows=rows,
@@ -328,6 +220,5 @@ def get_anomaly(
         "days": days,
         "method": method,
         "total_rows": len(rows),
-        "volume_enriched": volume_enriched,
         **result,
     }
