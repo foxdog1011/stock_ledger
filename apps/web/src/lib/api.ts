@@ -287,6 +287,65 @@ export const urls = {
   universeCompanies: () => url("/api/universe/companies"),
   universeCompany:   (symbol: string) => url(`/api/universe/companies/${symbol}`),
   universeTesis:     (symbol: string) => url(`/api/universe/companies/${symbol}/thesis`),
+
+  // Alerts
+  alerts: (includeTrigered?: boolean) =>
+    url(`/api/alerts${qs({ include_triggered: includeTrigered ? "true" : undefined })}`),
+  alertsCheck: () => url("/api/alerts/check"),
+  alert: (id: number) => url(`/api/alerts/${id}`),
+
+  // Chip
+  chip: (symbol: string, date?: string) => url(`/api/chip/${symbol}${qs({ date })}`),
+  chipRange: (symbol: string, start: string, end: string) =>
+    url(`/api/chip/${symbol}/range${qs({ start, end })}`),
+  chipPortfolio: (date?: string) => url(`/api/chip/portfolio/summary${qs({ date })}`),
+
+  // Rolling
+  rollingLog: (p?: { symbol?: string; start?: string; end?: string; limit?: number }) =>
+    url(`/api/rolling${qs({ symbol: p?.symbol, start: p?.start, end: p?.end, limit: p?.limit != null ? String(p.limit) : undefined })}`),
+  rollingSummary: (symbol?: string) => url(`/api/rolling/summary${qs({ symbol })}`),
+  sectorCheck: (asOf?: string) => url(`/api/rolling/sector-check${qs({ as_of: asOf })}`),
+
+  // Chart / Technical Indicators
+  chart: (symbol: string, days?: number, asOf?: string) =>
+    url(`/api/chart/${symbol}${qs({ days: days != null ? String(days) : undefined, as_of: asOf })}`),
+
+  // Monthly Revenue
+  revenue: (symbol: string, limit?: number) =>
+    url(`/api/revenue/${symbol}${qs({ limit: limit != null ? String(limit) : undefined })}`),
+  fetchRevenue: (symbol: string) => url(`/api/revenue/${symbol}/fetch`),
+
+  // Allocation
+  allocation: (asOf?: string) => url(`/api/allocation${qs({ as_of: asOf })}`),
+
+  // Screener
+  screener: (p?: {
+    sector?: string; exchange?: string; country?: string;
+    inPositions?: boolean; inWatchlist?: boolean;
+    minYoyPct?: number; foreignNetPositive?: boolean; limit?: number;
+  }) => url(`/api/screener${qs({
+    sector: p?.sector,
+    exchange: p?.exchange,
+    country: p?.country,
+    in_positions: p?.inPositions != null ? String(p.inPositions) : undefined,
+    in_watchlist: p?.inWatchlist != null ? String(p.inWatchlist) : undefined,
+    min_yoy_pct: p?.minYoyPct != null ? String(p.minYoyPct) : undefined,
+    foreign_net_positive: p?.foreignNetPositive != null ? String(p.foreignNetPositive) : undefined,
+    limit: p?.limit != null ? String(p.limit) : undefined,
+  })}`),
+
+  // Anomaly detection
+  anomalyBatch: (p?: { days?: number }) =>
+    url(`/api/anomaly/batch${qs({ days: p?.days != null ? String(p.days) : undefined })}`),
+  anomaly: (symbol: string, p?: {
+    days?: number; method?: string; zscoreThreshold?: number; aeThreshold?: number; asOf?: string;
+  }) => url(`/api/anomaly/${symbol}${qs({
+    days: p?.days != null ? String(p.days) : undefined,
+    method: p?.method,
+    zscore_threshold: p?.zscoreThreshold != null ? String(p.zscoreThreshold) : undefined,
+    ae_threshold: p?.aeThreshold != null ? String(p.aeThreshold) : undefined,
+    as_of: p?.asOf,
+  })}`),
 } as const;
 
 // ── Multipart upload helper ───────────────────────────────────────────────────
@@ -838,13 +897,16 @@ export function mapWatchlist(raw: Raw): Watchlist {
 
 export function mapWatchlistItem(raw: Raw): WatchlistItem {
   return {
-    id:           raw.id as number,
-    watchlistId:  pick(raw, "watchlist_id", "watchlistId", 0) as number,
-    symbol:       raw.symbol as string,
-    status:       raw.status as WatchlistItem["status"],
-    thesisSummary: pick(raw, "thesis_summary", "thesisSummary", "") as string,
-    addedAt:      pick(raw, "added_at", "addedAt", "") as string,
-    updatedAt:    pick(raw, "updated_at", "updatedAt", "") as string,
+    id:               raw.id as number,
+    watchlistId:      pick(raw, "watchlist_id", "watchlistId", 0) as number,
+    symbol:           raw.symbol as string,
+    status:           raw.status as WatchlistItem["status"],
+    industryPosition: pick(raw, "industry_position", "industryPosition", "") as string,
+    operationFocus:   pick(raw, "operation_focus", "operationFocus", "") as string,
+    thesisSummary:    pick(raw, "thesis_summary", "thesisSummary", "") as string,
+    primaryCatalyst:  pick(raw, "primary_catalyst", "primaryCatalyst", "") as string,
+    addedAt:          pick(raw, "added_at", "addedAt", "") as string,
+    updatedAt:        pick(raw, "updated_at", "updatedAt", "") as string,
   };
 }
 
@@ -1023,5 +1085,133 @@ export function mapOverview(raw: Raw): OverviewData {
     },
     generatedAt: pick(raw, "generated_at", "generatedAt", "") as string,
     asOf:        pick(raw, "as_of",        "asOf",        "") as string,
+  };
+}
+
+import type {
+  PriceAlert, AlertCheckItem, AlertCheckResult,
+  ChipGroup, ChipData, ChipRangeResult,
+  RollingLog, RollingLogSummary, SectorCheck, SectorCheckSector,
+} from "./types";
+
+// ── Alert mappers ─────────────────────────────────────────────────────────────
+
+export function mapPriceAlert(raw: Raw): PriceAlert {
+  return {
+    id:          raw.id as number,
+    symbol:      raw.symbol as string,
+    alertType:   pick(raw, "alert_type", "alertType", "stop_loss") as PriceAlert["alertType"],
+    price:       raw.price as number,
+    note:        (raw.note as string) ?? "",
+    createdAt:   pick(raw, "created_at", "createdAt", "") as string,
+    triggered:   (raw.triggered as number) ?? 0,
+    triggeredAt: (pick(raw, "triggered_at", "triggeredAt", null) as string | null),
+  };
+}
+
+function mapAlertCheckItem(raw: Raw): AlertCheckItem {
+  return {
+    ...mapPriceAlert(raw),
+    currentPrice: (pick(raw, "current_price", "currentPrice", null) as number | null),
+    status:       raw.status as AlertCheckItem["status"],
+    gapPct:       (pick(raw, "gap_pct", "gapPct", null) as number | null),
+  };
+}
+
+export function mapAlertCheckResult(raw: Raw): AlertCheckResult {
+  const sumRaw = (raw.summary ?? {}) as Raw;
+  return {
+    triggered: ((raw.triggered ?? []) as Raw[]).map(mapAlertCheckItem),
+    pending:   ((raw.pending   ?? []) as Raw[]).map(mapAlertCheckItem),
+    summary: {
+      totalActive:    pick(sumRaw, "total_active",    "totalActive",    0) as number,
+      triggeredNow:   pick(sumRaw, "triggered_now",   "triggeredNow",   0) as number,
+      stillPending:   pick(sumRaw, "still_pending",   "stillPending",   0) as number,
+    },
+  };
+}
+
+// ── Chip mappers ──────────────────────────────────────────────────────────────
+
+function mapChipGroup(raw: Raw): ChipGroup {
+  return { buy: raw.buy as number, sell: raw.sell as number, net: raw.net as number };
+}
+
+export function mapChipData(raw: Raw): ChipData {
+  return {
+    symbol:          raw.symbol as string,
+    date:            raw.date as string,
+    source:          (raw.source as ChipData["source"]) ?? null,
+    foreign:         raw.foreign ? mapChipGroup(raw.foreign as Raw) : { buy: 0, sell: 0, net: 0 },
+    investmentTrust: raw.investment_trust ? mapChipGroup(raw.investment_trust as Raw) : { buy: 0, sell: 0, net: 0 },
+    dealer:          raw.dealer ? mapChipGroup(raw.dealer as Raw) : { buy: 0, sell: 0, net: 0 },
+    totalNet:        pick(raw, "total_net", "totalNet", 0) as number,
+    error:           raw.error as string | undefined,
+  };
+}
+
+export function mapChipRangeResult(raw: Raw): ChipRangeResult {
+  const s = (raw.summary ?? {}) as Raw;
+  return {
+    symbol:       raw.symbol as string,
+    start:        raw.start as string,
+    end:          raw.end as string,
+    daysWithData: pick(raw, "days_with_data", "daysWithData", 0) as number,
+    summary: {
+      foreignNetTotal:          pick(s, "foreign_net_total",           "foreignNetTotal",          0) as number,
+      investmentTrustNetTotal:  pick(s, "investment_trust_net_total",  "investmentTrustNetTotal",  0) as number,
+      dealerNetTotal:           pick(s, "dealer_net_total",            "dealerNetTotal",           0) as number,
+      totalNet:                 pick(s, "total_net",                   "totalNet",                 0) as number,
+    },
+    daily: ((raw.daily ?? []) as Raw[]).map(mapChipData),
+  };
+}
+
+// ── Rolling mappers ───────────────────────────────────────────────────────────
+
+export function mapRollingLog(raw: Raw): RollingLog {
+  return {
+    id:           raw.id as number,
+    date:         raw.date as string,
+    symbol:       raw.symbol as string,
+    action:       raw.action as RollingLog["action"],
+    shares:       (raw.shares as number | null) ?? null,
+    sellPrice:    (pick(raw, "sell_price", "sellPrice", null) as number | null),
+    buyPrice:     (pick(raw, "buy_price",  "buyPrice",  null) as number | null),
+    profitAmount: (pick(raw, "profit_amount", "profitAmount", null) as number | null),
+    note:         (raw.note as string) ?? "",
+    createdAt:    pick(raw, "created_at", "createdAt", "") as string,
+  };
+}
+
+export function mapRollingLogSummary(raw: Raw): RollingLogSummary {
+  return {
+    grandTotalProfit: pick(raw, "grand_total_profit", "grandTotalProfit", 0) as number,
+    totalRolls:       pick(raw, "total_rolls",        "totalRolls",       0) as number,
+    bySymbol: ((pick(raw, "by_symbol", "bySymbol", []) as Raw[]).map((r) => ({
+      symbol:       r.symbol as string,
+      rollCount:    pick(r, "roll_count",   "rollCount",   0) as number,
+      totalProfit:  pick(r, "total_profit", "totalProfit", 0) as number,
+      avgProfit:    pick(r, "avg_profit",   "avgProfit",   0) as number,
+      lastRollDate: pick(r, "last_roll_date","lastRollDate","") as string,
+    }))),
+  };
+}
+
+export function mapSectorCheck(raw: Raw): SectorCheck {
+  return {
+    asOf:             pick(raw, "as_of",              "asOf",             "") as string,
+    alert:            Boolean(raw.alert),
+    alerts:           (raw.alerts ?? []) as string[],
+    uniqueSectors:    pick(raw, "unique_sectors",     "uniqueSectors",    0)  as number,
+    totalPositions:   pick(raw, "total_positions",    "totalPositions",   0)  as number,
+    totalMarketValue: pick(raw, "total_market_value", "totalMarketValue", 0)  as number,
+    sectors: ((raw.sectors ?? []) as Raw[]).map((s): SectorCheckSector => ({
+      sector:         s.sector as string,
+      symbols:        (s.symbols ?? []) as string[],
+      marketValue:    pick(s, "market_value",     "marketValue",    0) as number,
+      pctOfPortfolio: pick(s, "pct_of_portfolio", "pctOfPortfolio", 0) as number,
+    })),
+    unknownSymbols: (pick(raw, "unknown_symbols", "unknownSymbols", []) as string[]),
   };
 }

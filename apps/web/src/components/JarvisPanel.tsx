@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { Bot, X, SendHorizonal, Loader2, Database, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Bot, X, SendHorizonal, Loader2, Database, Trash2, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -26,7 +27,12 @@ const TOOL_LABELS: Record<string, string> = {
   get_lots:               "Lot Details",
   get_perf_summary:       "Performance",
   get_risk_metrics:       "Risk Metrics",
+  add_trade:              "Recording Trade",
+  add_cash:               "Recording Cash",
 };
+
+const WRITE_TOOLS = new Set(["add_trade", "add_cash"]);
+const LS_KEY = "jarvis_messages";
 
 const PAGE_LABELS: Record<string, string> = {
   "/overview":   "Overview Dashboard",
@@ -76,15 +82,25 @@ function JarvisMessage({ msg }: { msg: Message }) {
         {/* Tool badges */}
         {!isUser && !!msg.toolCalls?.length && (
           <div className="flex flex-wrap gap-1 mb-1.5">
-            {msg.toolCalls.map((tc, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-900 text-cyan-400"
-              >
-                <Database className="h-2 w-2" />
-                {TOOL_LABELS[tc.name] ?? tc.name}
-              </span>
-            ))}
+            {msg.toolCalls.map((tc, i) => {
+              const isWrite = WRITE_TOOLS.has(tc.name);
+              return (
+                <span
+                  key={i}
+                  className={cn(
+                    "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border",
+                    isWrite
+                      ? "bg-emerald-950 border-emerald-900 text-emerald-400"
+                      : "bg-cyan-950 border-cyan-900 text-cyan-400",
+                  )}
+                >
+                  {isWrite
+                    ? <PenLine className="h-2 w-2" />
+                    : <Database className="h-2 w-2" />}
+                  {TOOL_LABELS[tc.name] ?? tc.name}
+                </span>
+              );
+            })}
           </div>
         )}
 
@@ -115,12 +131,19 @@ function JarvisMessage({ msg }: { msg: Message }) {
 
 export function JarvisPanel() {
   const [open, setOpen]       = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem(LS_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput]     = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
   const pathname  = usePathname();
+  const qc        = useQueryClient();
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -139,6 +162,11 @@ export function JarvisPanel() {
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 320);
   }, [open]);
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(messages)); } catch { /* quota */ }
+  }, [messages]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -166,6 +194,7 @@ export function JarvisPanel() {
     setLoading(true);
 
     const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+    let wroteData = false;
 
     try {
       const res = await fetch("/api/chat/stream", {
@@ -194,6 +223,7 @@ export function JarvisPanel() {
           try {
             const ev = JSON.parse(raw) as Record<string, string>;
             if (ev.type === "tool_call") {
+              if (WRITE_TOOLS.has(ev.name)) wroteData = true;
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? { ...m, toolCalls: [...(m.toolCalls ?? []), { name: ev.name }] }
@@ -207,6 +237,13 @@ export function JarvisPanel() {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId ? { ...m, streaming: false } : m,
               ));
+              if (wroteData) {
+                qc.invalidateQueries({ queryKey: ["trades"] });
+                qc.invalidateQueries({ queryKey: ["cashTx"] });
+                qc.invalidateQueries({ queryKey: ["cashBalance"] });
+                qc.invalidateQueries({ queryKey: ["positions"] });
+                qc.invalidateQueries({ queryKey: ["equitySnapshot"] });
+              }
             } else if (ev.type === "error") {
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
@@ -285,7 +322,10 @@ export function JarvisPanel() {
           <div className="flex items-center gap-2">
             {messages.length > 0 && (
               <button
-                onClick={() => setMessages([])}
+                onClick={() => {
+                  setMessages([]);
+                  try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+                }}
                 title="Clear conversation"
                 className="text-zinc-600 hover:text-zinc-400 transition-colors"
               >

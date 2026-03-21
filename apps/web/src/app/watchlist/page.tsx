@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Plus, Archive, ArchiveRestore, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { Plus, Archive, ArchiveRestore, AlertTriangle, CheckCircle2, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,7 @@ import {
   useCreateWatchlist,
   useAddWatchlistItem,
   useArchiveWatchlistItem,
+  useUpdateWatchlistItem,
 } from "@/hooks/use-queries";
 import type { WatchlistItem } from "@/lib/types";
 
@@ -89,6 +90,88 @@ function CreateWatchlistDialog() {
   );
 }
 
+// ── Edit Item Dialog ──────────────────────────────────────────────────────────
+
+function EditItemDialog({ item, watchlistId }: { item: WatchlistItem; watchlistId: number }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    industry_position: item.industryPosition,
+    operation_focus: item.operationFocus,
+    thesis_summary: item.thesisSummary,
+    primary_catalyst: item.primaryCatalyst,
+    status: item.status,
+  });
+  const mut = useUpdateWatchlistItem();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    mut.mutate(
+      { watchlistId, itemId: item.id, data: form },
+      {
+        onSuccess: () => {
+          toast.success(`${item.symbol} updated`);
+          setOpen(false);
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed"),
+      },
+    );
+  }
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className="text-muted-foreground hover:text-foreground transition-colors" title="Edit">
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit {item.symbol}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3 pt-1">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">產業定位 Industry Position</label>
+            <Input value={form.industry_position} onChange={set("industry_position")} placeholder="e.g. AI晶片龍頭 / 半導體設備" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">營運重心 Operation Focus</label>
+            <Input value={form.operation_focus} onChange={set("operation_focus")} placeholder="e.g. 先進封裝 CoWoS 擴產" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">投資論點 Thesis</label>
+            <Input value={form.thesis_summary} onChange={set("thesis_summary")} placeholder="e.g. AI 需求驅動，護城河深" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">主要催化劑 Primary Catalyst</label>
+            <Input value={form.primary_catalyst} onChange={set("primary_catalyst")} placeholder="e.g. Q3 法說會、新品發布" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">狀態 Status</label>
+            <select
+              value={form.status}
+              onChange={set("status")}
+              className="w-full border rounded px-2 py-1.5 text-sm bg-background"
+            >
+              <option value="watching">Watching</option>
+              <option value="monitoring">Monitoring</option>
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" size="sm" disabled={mut.isPending}>
+              {mut.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              Save
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Add Symbol Row ────────────────────────────────────────────────────────────
 
 function AddSymbolRow({ watchlistId }: { watchlistId: number }) {
@@ -140,6 +223,7 @@ function WatchlistCard({ watchlistId, name }: { watchlistId: number; name: strin
   const { data: gaps } = useWatchlistGaps(watchlistId);
   const addMut = useAddWatchlistItem();
   const archiveMut = useArchiveWatchlistItem();
+  const updateMut = useUpdateWatchlistItem();
 
   const activeItems = items?.filter((i) => i.status !== "archived") ?? [];
   const archivedItems = items?.filter((i) => i.status === "archived") ?? [];
@@ -227,7 +311,9 @@ function WatchlistCard({ watchlistId, name }: { watchlistId: number; name: strin
               <TableRow>
                 <TableHead>Symbol</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Thesis</TableHead>
+                <TableHead>產業定位</TableHead>
+                <TableHead>營運重心</TableHead>
+                <TableHead>Thesis / Catalyst</TableHead>
                 <TableHead className="w-16" />
               </TableRow>
             </TableHeader>
@@ -244,18 +330,31 @@ function WatchlistCard({ watchlistId, name }: { watchlistId: number; name: strin
                       {item.status}
                     </span>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">
-                    {item.thesisSummary || "—"}
+                  <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate">
+                    {item.industryPosition || <span className="italic opacity-40">未填</span>}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate">
+                    {item.operationFocus || <span className="italic opacity-40">未填</span>}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[200px]">
+                    {item.thesisSummary && <div className="truncate">{item.thesisSummary}</div>}
+                    {item.primaryCatalyst && (
+                      <div className="truncate text-xs text-blue-500">{item.primaryCatalyst}</div>
+                    )}
+                    {!item.thesisSummary && !item.primaryCatalyst && "—"}
                   </TableCell>
                   <TableCell>
-                    <button
-                      onClick={() => archive(item)}
-                      disabled={archiveMut.isPending}
-                      className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-                      title="Archive"
-                    >
-                      <Archive className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <EditItemDialog item={item} watchlistId={watchlistId} />
+                      <button
+                        onClick={() => archive(item)}
+                        disabled={archiveMut.isPending}
+                        className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                        title="Archive"
+                      >
+                        <Archive className="h-4 w-4" />
+                      </button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

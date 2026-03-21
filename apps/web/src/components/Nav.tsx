@@ -7,22 +7,30 @@ import { TrendingUp, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 const primaryLinks = [
-  { href: "/overview",    label: "Overview" },
-  { href: "/portfolio",   label: "Portfolio" },
-  { href: "/universe",    label: "Universe" },
-  { href: "/watchlist",   label: "Watchlist" },
-  { href: "/catalyst",    label: "Catalyst" },
-  { href: "/offsetting",  label: "Offsetting" },
+  { href: "/overview",    label: "總覽" },
+  { href: "/portfolio",   label: "投資組合" },
+  { href: "/rolling",     label: "滾動分析" },
+  { href: "/alerts",      label: "價格警示" },
+  { href: "/chip",        label: "籌碼" },
+  { href: "/positions",   label: "持倉" },
+  { href: "/chat",        label: "J.A.R.V.I.S." },
 ] as const;
 
 const secondaryLinks = [
-  { href: "/cash",        label: "Cash" },
-  { href: "/trades",      label: "Trades" },
-  { href: "/positions",   label: "Positions" },
-  { href: "/quotes",      label: "Quotes" },
-  { href: "/digest",      label: "Digest" },
-  { href: "/import",      label: "Import" },
-  { href: "/settings",    label: "Settings" },
+  { href: "/allocation",  label: "資產配置" },
+  { href: "/revenue",     label: "月營收" },
+  { href: "/screener",    label: "選股篩選" },
+  { href: "/anomaly",     label: "異常偵測" },
+  { href: "/trades",      label: "交易紀錄" },
+  { href: "/cash",        label: "現金" },
+  { href: "/quotes",      label: "報價" },
+  { href: "/universe",    label: "股票池" },
+  { href: "/watchlist",   label: "觀察清單" },
+  { href: "/catalyst",    label: "催化劑" },
+  { href: "/offsetting",  label: "對沖試算" },
+  { href: "/digest",      label: "日報" },
+  { href: "/import",      label: "匯入" },
+  { href: "/settings",    label: "設定" },
 ] as const;
 
 export function Nav() {
@@ -53,7 +61,7 @@ export function Nav() {
           <TrendingUp className="h-5 w-5 text-primary" />
           <span className="hidden sm:inline">Stock Ledger</span>
         </Link>
-        <nav className="flex items-center gap-1 overflow-x-auto flex-1">
+        <nav className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
           {primaryLinks.map(({ href, label }) => (
             <Link
               key={href}
@@ -68,43 +76,43 @@ export function Nav() {
               {label}
             </Link>
           ))}
-
-          {/* More dropdown */}
-          <div className="relative" ref={moreRef}>
-            <button
-              onClick={() => setMoreOpen((v) => !v)}
-              className={cn(
-                "flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
-                anySecondaryActive || moreOpen
-                  ? "bg-secondary text-secondary-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-              )}
-            >
-              More
-              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", moreOpen && "rotate-180")} />
-            </button>
-
-            {moreOpen && (
-              <div className="absolute left-0 top-full mt-1 w-40 rounded-md border bg-background shadow-md z-50 py-1">
-                {secondaryLinks.map(({ href, label }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setMoreOpen(false)}
-                    className={cn(
-                      "block px-4 py-2 text-sm transition-colors",
-                      isActive(href)
-                        ? "bg-secondary text-secondary-foreground font-medium"
-                        : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-                    )}
-                  >
-                    {label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
         </nav>
+
+        {/* More dropdown — outside overflow-x-auto nav to avoid clipping */}
+        <div className="relative flex-shrink-0" ref={moreRef}>
+          <button
+            onClick={() => setMoreOpen((v) => !v)}
+            className={cn(
+              "flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
+              anySecondaryActive || moreOpen
+                ? "bg-secondary text-secondary-foreground"
+                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+            )}
+          >
+            更多
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", moreOpen && "rotate-180")} />
+          </button>
+
+          {moreOpen && (
+            <div className="absolute right-0 top-full mt-1 w-40 rounded-md border bg-background shadow-md z-50 py-1">
+              {secondaryLinks.map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    "block px-4 py-2 text-sm transition-colors",
+                    isActive(href)
+                      ? "bg-secondary text-secondary-foreground font-medium"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

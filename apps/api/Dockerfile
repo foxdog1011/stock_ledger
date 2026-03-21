@@ -18,9 +18,10 @@ COPY --from=builder /install /usr/local
 WORKDIR /app
 
 # Source code
-COPY ledger/   ./ledger/
-COPY domain/   ./domain/
-COPY apps/api/ ./apps/api/
+COPY ledger/    ./ledger/
+COPY domain/    ./domain/
+COPY analysis/  ./analysis/
+COPY apps/api/  ./apps/api/
 COPY apps/__init__.py ./apps/__init__.py
 
 # Persistent data directory (mount a volume here)
