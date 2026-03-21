@@ -31,8 +31,8 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ```
 ┌───────────────────────────────────────────────────────────────┐
 │  Next.js 14  ·  TypeScript  ·  TanStack Query v5  ·  shadcn   │
-│  /overview /portfolio /positions /lots /universe /watchlist    │
-│  /catalyst /digest /offsetting /quotes /settings              │
+│  /overview /portfolio /positions /lots /universe /catalyst     │
+│  /digest /offsetting /anomaly /alerts /settings  …            │
 │  /anomaly /alerts /allocation /chip /revenue /rolling         │
 │  /screener  …                                                  │
 │                                                                │
@@ -43,7 +43,7 @@ A full-stack personal portfolio tracker and investment research platform — bui
 └──────────────────────────┬────────────────────────────────────┘
                            │  HTTP  (server-side proxy, no CORS)
 ┌──────────────────────────▼────────────────────────────────────┐
-│  FastAPI  ·  40+ endpoints  ·  22 routers                      │
+│  FastAPI  ·  40+ endpoints  ·  21 routers                      │
 │  APScheduler  (daily quote refresh @ 18:00 Asia/Taipei)        │
 │  BackgroundTasks  (auto-refresh on every trade POST)           │
 │                                                                │
@@ -52,11 +52,14 @@ A full-stack personal portfolio tracker and investment research platform — bui
 │                                                                │
 │  GET /api/anomaly/batch ──► analysis/ (PCA Autoencoder)        │
 │    6-feature time-series → reconstruction error → anomalies    │
+│                                                                │
+│  GET /api/chart/{symbol} ──► yfinance (MA/RSI/KD)             │
+│    fetches directly; supports US + Taiwan (.TW/.TWO)           │
 └──────┬──────────────────┬──────────────────┬──────────────────┘
        │                  │                  │
   domain/ layer      ledger/ library    providers/
   (DDD services)     (pure Python core)  TWSE · FinMind · Yahoo
-       │                  │              yfinance (volume fallback)
+       │                  │              yfinance (chart + anomaly)
        └──────────────────┴──── SQLite  (Docker named volume)
 ```
 
@@ -211,7 +214,7 @@ Integrates with the catalyst calendar: anomaly signals provide early context; ca
 | Stage | Endpoint group | Purpose |
 |---|---|---|
 | Universe | `/api/universe` | Company master: sector, industry, business model, peer relationships, thesis notes |
-| Watchlist | `/api/watchlist` | Curated lists; coverage check ensures 3× open positions |
+| Watchlist | `/api/watchlist` | Curated monitoring lists; coverage check ensures 3× open positions; accessible via Universe page tab |
 | Catalyst | `/api/catalyst` | Event log (earnings, macro, sector) with Plan A/B/C/D scenarios and price targets |
 | Digest | `/api/digest` | Auto-generated daily report: P&L, top movers, upcoming catalysts, rebalance alerts |
 
@@ -243,7 +246,7 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 |---|---|
 | Soft delete | `is_void` flag on `cash_entries` and `trades`; history is never destroyed |
 | CSV import | `dry_run=true` previews insert/skip/error counts before committing |
-| CSV export | Trades, cash, quotes |
+| CSV export | Trades, cash |
 | DB backup / restore | Download and re-upload the raw SQLite file from `/settings` |
 
 ---
@@ -315,13 +318,10 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `GET` | `/api/execution/offset/profit-inventory` | Realized gains available to offset |
 | `GET` | `/api/execution/offset/simulate/{symbol}` | Simulate crystallizing a loss |
 
-### Quotes
+### Quotes (Auto-refresh only)
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/quotes/manual` | Add a manual closing price |
-| `GET` | `/api/quotes/last` | Latest price + source for a symbol |
-| `GET` | `/api/quotes/todo` | Symbols with missing or stale quotes |
 | `POST` | `/api/quotes/refresh` | Trigger a provider refresh |
 | `GET` | `/api/quotes/refresh/status` | Last refresh run log |
 | `GET` | `/api/quotes/provider` | Configured provider info |
@@ -349,8 +349,8 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/export/{trades\|cash\|quotes}.csv` | Download as CSV |
-| `POST` | `/api/import/{trades\|cash\|quotes}.csv` | Upload CSV (`?dry_run=true`) |
+| `GET` | `/api/export/{trades\|cash}.csv` | Download as CSV |
+| `POST` | `/api/import/{trades\|cash}.csv` | Upload CSV (`?dry_run=true`) |
 | `GET` | `/api/backup/db` | Download SQLite file |
 | `POST` | `/api/restore/db` | Restore from uploaded file |
 
@@ -371,14 +371,12 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `/revenue` | Revenue trend analysis |
 | `/rolling` | Rolling performance metrics |
 | `/screener` | Stock screener |
-| `/universe` | Company research database with thesis notes |
-| `/watchlist` | Investment thesis tracker with coverage check |
+| `/universe` | Company research database + watchlist (tabbed: 股票池 / 觀察清單) |
 | `/catalyst` | Event log with Plan A/B/C/D scenario planner |
 | `/digest` | Daily portfolio report history |
 | `/offsetting` | Tax-loss harvesting simulator |
 | `/trades` | Trade history with void support |
 | `/cash` | Cash ledger with void support |
-| `/quotes` | Manual price entry + refresh controls |
 | `/import` | CSV upload with dry-run preview |
 | `/settings` | Provider config, export, backup / restore, benchmark bootstrap |
 
@@ -417,7 +415,7 @@ stock_ledger/
 │   │   └── main.py            #   App factory + APScheduler lifespan
 │   └── web/                   # Next.js 14 frontend
 │       └── src/
-│           ├── app/           #   21 page routes
+│           ├── app/           #   20 page routes
 │           ├── components/
 │           │   ├── JarvisPanel.tsx   # AI chat HUD (floating, any page)
 │           │   ├── Fab.tsx           # Speed-dial for data entry
