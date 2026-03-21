@@ -33,6 +33,14 @@ Operational parameters:
 - If asked for a recommendation or analysis, be decisive and ground it in the data.
 - You may occasionally refer to the user's portfolio activity in a confident, observational tone.
 
+Write capabilities:
+- You can record trades and cash entries using add_trade and add_cash tools.
+- When the user says they bought/sold stocks or deposited/withdrew cash, extract all details \
+(date, symbol, qty, price, commission, tax) and call the appropriate tool.
+- If any required field is ambiguous, ask for clarification before writing.
+- After writing, confirm exactly what was recorded (e.g. "Recorded: BUY 100 AAPL @ $150.00 on 2024-01-15").
+- Use today's date ({today}) if the user doesn't specify a date.
+
 Current context: The user is on the {page_label} page. Today: {today}.\
 """
 
@@ -133,6 +141,44 @@ TOOLS: list[dict] = [
             "required": [],
         },
     },
+    {
+        "name": "add_trade",
+        "description": (
+            "Record a buy or sell trade. Use when the user says they bought or sold a stock. "
+            "Returns the saved trade details."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "Trade date YYYY-MM-DD"},
+                "symbol": {"type": "string", "description": "Stock ticker symbol e.g. AAPL, 2330"},
+                "side": {"type": "string", "enum": ["buy", "sell"], "description": "buy or sell"},
+                "qty": {"type": "number", "description": "Number of shares (positive)"},
+                "price": {"type": "number", "description": "Price per share"},
+                "commission": {"type": "number", "description": "Brokerage commission (default 0)", "default": 0},
+                "tax": {"type": "number", "description": "Transaction tax (default 0)", "default": 0},
+                "note": {"type": "string", "description": "Optional note", "default": ""},
+            },
+            "required": ["date", "symbol", "side", "qty", "price"],
+        },
+    },
+    {
+        "name": "add_cash",
+        "description": (
+            "Record a cash deposit or withdrawal. Use when the user mentions depositing "
+            "or withdrawing money from their account. "
+            "Positive amount = deposit, negative = withdrawal."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "Date YYYY-MM-DD"},
+                "amount": {"type": "number", "description": "Amount: positive = deposit, negative = withdrawal"},
+                "note": {"type": "string", "description": "Optional note", "default": ""},
+            },
+            "required": ["date", "amount"],
+        },
+    },
 ]
 
 
@@ -205,6 +251,45 @@ def _run_tool(name: str, input_: dict, ledger: StockLedger) -> Any:
             "best_day_pct": round(max(returns), 4),
             "trading_days": n,
             "volatility_pct": round(std_dev, 4),
+        }
+
+    if name == "add_trade":
+        symbol = input_["symbol"].upper()
+        trade_id = ledger.add_trade(
+            date=input_["date"],
+            symbol=symbol,
+            side=input_["side"],
+            qty=float(input_["qty"]),
+            price=float(input_["price"]),
+            commission=float(input_.get("commission") or 0),
+            tax=float(input_.get("tax") or 0),
+            note=str(input_.get("note") or ""),
+        )
+        total = float(input_["qty"]) * float(input_["price"])
+        return {
+            "status": "ok",
+            "trade_id": trade_id,
+            "date": input_["date"],
+            "symbol": symbol,
+            "side": input_["side"],
+            "qty": float(input_["qty"]),
+            "price": float(input_["price"]),
+            "commission": float(input_.get("commission") or 0),
+            "tax": float(input_.get("tax") or 0),
+            "total": round(total, 2),
+        }
+
+    if name == "add_cash":
+        ledger.add_cash(
+            date=input_["date"],
+            amount=float(input_["amount"]),
+            note=str(input_.get("note") or ""),
+        )
+        return {
+            "status": "ok",
+            "date": input_["date"],
+            "amount": float(input_["amount"]),
+            "type": "deposit" if float(input_["amount"]) >= 0 else "withdrawal",
         }
 
     return {"error": f"Unknown tool: {name}"}
