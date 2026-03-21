@@ -598,6 +598,24 @@ export function useArchiveWatchlistItem() {
   });
 }
 
+export function useUpdateWatchlistItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      watchlistId,
+      itemId,
+      data,
+    }: {
+      watchlistId: number;
+      itemId: number;
+      data: Partial<{ industry_position: string; operation_focus: string; thesis_summary: string; primary_catalyst: string; status: string }>;
+    }) => patch<WatchlistItem>(`/api/watchlist/lists/${watchlistId}/items/${itemId}`, data),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["watchlistItems", vars.watchlistId] });
+    },
+  });
+}
+
 // ── Universe ──────────────────────────────────────────────────────────────────
 
 export function useUniverseCompanies() {
@@ -706,5 +724,214 @@ export function useSeedDemo() {
       // Invalidate everything so all pages refresh with new demo data
       qc.invalidateQueries();
     },
+  });
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+import {
+  mapPriceAlert, mapAlertCheckResult,
+  mapChipData, mapChipRangeResult,
+  mapRollingLog, mapRollingLogSummary, mapSectorCheck,
+} from "@/lib/api";
+import type {
+  PriceAlert, AlertCheckResult,
+  ChipData, ChipRangeResult,
+  RollingLog, RollingLogSummary, SectorCheck,
+} from "@/lib/types";
+
+export function useAlerts(includeTriggered = false) {
+  return useQuery({
+    queryKey: ["alerts", includeTriggered],
+    queryFn: () =>
+      fetcher(urls.alerts(includeTriggered)).then((d) => (d as Raw[]).map(mapPriceAlert)) as Promise<PriceAlert[]>,
+  });
+}
+
+export function useCheckAlerts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => fetcher(urls.alertsCheck()) as Promise<AlertCheckResult>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+  });
+}
+
+export function useCreateAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { symbol: string; alert_type: string; price: number; note?: string }) =>
+      post<PriceAlert>("/api/alerts", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+  });
+}
+
+export function useDeleteAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => del(urls.alert(id)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+  });
+}
+
+// ── Chip ──────────────────────────────────────────────────────────────────────
+
+export function useChip(symbol: string, date?: string) {
+  return useQuery({
+    queryKey: ["chip", symbol, date],
+    queryFn: () => fetcher(urls.chip(symbol, date)).then((d) => mapChipData(d as Raw)) as Promise<ChipData>,
+    enabled: !!symbol,
+  });
+}
+
+export function useChipRange(symbol: string, start: string, end: string) {
+  return useQuery({
+    queryKey: ["chipRange", symbol, start, end],
+    queryFn: () => fetcher(urls.chipRange(symbol, start, end)).then((d) => mapChipRangeResult(d as Raw)) as Promise<ChipRangeResult>,
+    enabled: !!symbol && !!start && !!end,
+  });
+}
+
+export function usePortfolioChip(date?: string) {
+  return useQuery({
+    queryKey: ["chipPortfolio", date],
+    queryFn: () =>
+      fetcher(urls.chipPortfolio(date)).then((d) => {
+        const raw = d as { date: string; holdings: Raw[] };
+        return { date: raw.date, holdings: raw.holdings.map(mapChipData) };
+      }),
+  });
+}
+
+// ── Rolling ───────────────────────────────────────────────────────────────────
+
+export function useRollingLog(p?: { symbol?: string; start?: string; end?: string; limit?: number }) {
+  return useQuery({
+    queryKey: ["rollingLog", p],
+    queryFn: () =>
+      fetcher(urls.rollingLog(p)).then((d) => (d as Raw[]).map(mapRollingLog)) as Promise<RollingLog[]>,
+  });
+}
+
+export function useRollingLogSummary(symbol?: string) {
+  return useQuery({
+    queryKey: ["rollingLogSummary", symbol],
+    queryFn: () =>
+      fetcher(urls.rollingSummary(symbol)).then((d) => mapRollingLogSummary(d as Raw)) as Promise<RollingLogSummary>,
+  });
+}
+
+export function useSectorCheck(asOf?: string) {
+  return useQuery({
+    queryKey: ["sectorCheck", asOf],
+    queryFn: () =>
+      fetcher(urls.sectorCheck(asOf)).then((d) => mapSectorCheck(d as Raw)) as Promise<SectorCheck>,
+  });
+}
+
+export function useCreateRollingLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      date: string; symbol: string; action: string;
+      shares?: number; sell_price?: number; buy_price?: number;
+      profit_amount?: number; note?: string;
+    }) => post<{ id: number }>("/api/rolling", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rollingLog"] });
+      qc.invalidateQueries({ queryKey: ["rollingLogSummary"] });
+    },
+  });
+}
+
+export function useDeleteRollingLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => del(urls.rollingLog() + `/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rollingLog"] }),
+  });
+}
+
+// ── Chart / Technical Indicators ──────────────────────────────────────────────
+import type { ChartData, RevenueData, AllocationData, ScreenerResponse, AnomalyResult, AnomalyBatchResult } from "@/lib/types";
+
+export function useChart(symbol: string | null, days = 120) {
+  return useQuery({
+    queryKey: ["chart", symbol, days],
+    queryFn: () => fetcher(urls.chart(symbol!, days)) as Promise<ChartData>,
+    enabled: !!symbol,
+  });
+}
+
+// ── Monthly Revenue ────────────────────────────────────────────────────────────
+
+export function useRevenue(symbol: string | null, limit = 24) {
+  return useQuery({
+    queryKey: ["revenue", symbol, limit],
+    queryFn: async () => {
+      const raw = (await fetcher(urls.revenue(symbol!, limit))) as {
+        symbol: string; count: number;
+        data: { year_month: string; revenue: number; yoy_pct: number | null; mom_pct: number | null }[];
+      };
+      return {
+        symbol: raw.symbol,
+        count: raw.count,
+        data: raw.data.map((r) => ({
+          yearMonth: r.year_month,
+          revenue: r.revenue,
+          yoyPct: r.yoy_pct,
+          momPct: r.mom_pct,
+        })),
+      } as RevenueData;
+    },
+    enabled: !!symbol,
+  });
+}
+
+export function useFetchRevenue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (symbol: string) =>
+      post<{ fetched: number }>(`/api/revenue/${symbol}/fetch`, {}),
+    onSuccess: (_d, sym) => qc.invalidateQueries({ queryKey: ["revenue", sym] }),
+  });
+}
+
+// ── Allocation ────────────────────────────────────────────────────────────────
+
+export function useAllocation(asOf?: string) {
+  return useQuery({
+    queryKey: ["allocation", asOf],
+    queryFn: () => fetcher(urls.allocation(asOf)) as Promise<AllocationData>,
+  });
+}
+
+// ── Screener ──────────────────────────────────────────────────────────────────
+
+export function useScreener(p?: {
+  sector?: string; exchange?: string; country?: string;
+  inPositions?: boolean; inWatchlist?: boolean;
+  minYoyPct?: number; foreignNetPositive?: boolean; limit?: number;
+}) {
+  return useQuery({
+    queryKey: ["screener", p],
+    queryFn: () => fetcher(urls.screener(p)) as Promise<ScreenerResponse>,
+  });
+}
+
+export function useAnomaly(
+  symbol: string | null,
+  p?: { days?: number; method?: string; zscoreThreshold?: number; aeThreshold?: number },
+) {
+  return useQuery({
+    queryKey: ["anomaly", symbol, p],
+    queryFn: () => fetcher(urls.anomaly(symbol!, p)) as Promise<AnomalyResult>,
+    enabled: !!symbol,
+  });
+}
+
+export function useAnomalyBatch(p?: { days?: number }) {
+  return useQuery({
+    queryKey: ["anomalyBatch", p],
+    queryFn: () => fetcher(urls.anomalyBatch(p)) as Promise<AnomalyBatchResult>,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

@@ -479,7 +479,10 @@ export interface WatchlistItem {
   watchlistId: number;
   symbol: string;
   status: WatchlistItemStatus;
+  industryPosition: string;
+  operationFocus: string;
   thesisSummary: string;
+  primaryCatalyst: string;
   addedAt: string;
   updatedAt: string;
 }
@@ -670,6 +673,263 @@ export interface OffsetSimulateResult {
   profitInventory: ProfitInventory;
   simulation: OffsetSimulation;
   guardrail: OffsetGuardrail;
+}
+
+// ── Price Alerts ──────────────────────────────────────────────────────────────
+
+export interface PriceAlert {
+  id: number;
+  symbol: string;
+  alertType: "stop_loss" | "target";
+  price: number;
+  note: string;
+  createdAt: string;
+  triggered: number;
+  triggeredAt: string | null;
+}
+
+export interface AlertCheckItem extends PriceAlert {
+  currentPrice: number | null;
+  status: "triggered" | "pending" | "no_price";
+  gapPct: number | null;
+}
+
+export interface AlertCheckResult {
+  triggered: AlertCheckItem[];
+  pending: AlertCheckItem[];
+  summary: { totalActive: number; triggeredNow: number; stillPending: number };
+}
+
+// ── 三大法人 Chip Data ─────────────────────────────────────────────────────────
+
+export interface ChipGroup {
+  buy: number;
+  sell: number;
+  net: number;
+}
+
+export interface ChipData {
+  symbol: string;
+  date: string;
+  source: "TWSE" | "FinMind" | null;
+  foreign: ChipGroup;
+  investmentTrust: ChipGroup;
+  dealer: ChipGroup;
+  totalNet: number;
+  error?: string;
+}
+
+export interface ChipRangeResult {
+  symbol: string;
+  start: string;
+  end: string;
+  daysWithData: number;
+  summary: {
+    foreignNetTotal: number;
+    investmentTrustNetTotal: number;
+    dealerNetTotal: number;
+    totalNet: number;
+  };
+  daily: ChipData[];
+}
+
+// ── Rolling Position Log ───────────────────────────────────────────────────────
+
+export type RollingAction = "roll" | "realize" | "reopen" | "note";
+
+export interface RollingLog {
+  id: number;
+  date: string;
+  symbol: string;
+  action: RollingAction;
+  shares: number | null;
+  sellPrice: number | null;
+  buyPrice: number | null;
+  profitAmount: number | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface RollingLogSummary {
+  grandTotalProfit: number;
+  totalRolls: number;
+  bySymbol: {
+    symbol: string;
+    rollCount: number;
+    totalProfit: number;
+    avgProfit: number;
+    lastRollDate: string;
+  }[];
+}
+
+export interface SectorCheckSector {
+  sector: string;
+  symbols: string[];
+  marketValue: number;
+  pctOfPortfolio: number;
+}
+
+export interface SectorCheck {
+  asOf: string;
+  alert: boolean;
+  alerts: string[];
+  uniqueSectors: number;
+  totalPositions: number;
+  totalMarketValue: number;
+  sectors: SectorCheckSector[];
+  unknownSymbols: string[];
+}
+
+// ── Chart / Technical Indicators ─────────────────────────────────────────────
+
+export interface ChartPoint {
+  date: string;
+  close: number;
+  ma20: number | null;
+  ma60: number | null;
+  rsi: number | null;
+  k: number | null;
+  d: number | null;
+}
+
+export interface ChartData {
+  symbol: string;
+  count: number;
+  data: ChartPoint[];
+}
+
+// ── Monthly Revenue ────────────────────────────────────────────────────────────
+
+export interface RevenuePoint {
+  yearMonth: string;
+  revenue: number;
+  yoyPct: number | null;
+  momPct: number | null;
+}
+
+export interface RevenueData {
+  symbol: string;
+  count: number;
+  data: RevenuePoint[];
+}
+
+// ── Asset Allocation ───────────────────────────────────────────────────────────
+
+export interface AllocationSlice {
+  label: string;
+  value: number;
+  pct: number;
+  symbols?: string[];
+}
+
+export interface AllocationPosition {
+  symbol: string;
+  marketValue: number;
+  pct: number;
+  sector: string;
+  geography: string;
+}
+
+export interface AllocationData {
+  asOf: string;
+  totalEquity: number;
+  totalMarketValue: number;
+  cash: number;
+  byAssetClass: AllocationSlice[];
+  bySector: AllocationSlice[];
+  byGeography: AllocationSlice[];
+  positions: AllocationPosition[];
+}
+
+// ── Screener ──────────────────────────────────────────────────────────────────
+
+export interface ScreenerRevenue {
+  latestYearMonth: string;
+  latestRevenue: number;
+  latestYoyPct: number | null;
+}
+
+export interface ScreenerChip {
+  foreignNetSum: number;
+  trustNetSum: number;
+  chipDays: number;
+}
+
+export interface ScreenerResult {
+  symbol: string;
+  name: string;
+  exchange: string | null;
+  sector: string | null;
+  industry: string | null;
+  country: string | null;
+  inPositions: boolean;
+  inWatchlist: boolean;
+  revenue: ScreenerRevenue | null;
+  chip: ScreenerChip | null;
+}
+
+export interface ScreenerResponse {
+  total: number;
+  results: ScreenerResult[];
+}
+
+// ── Anomaly Detection ─────────────────────────────────────────────────────────
+
+export interface AnomalyPoint {
+  date: string;
+  close: number;
+  volume: number;
+  zscore: number | null;
+  volume_ratio: number | null;
+  price_change_pct: number;
+  anomaly_score?: number;
+  reconstruction_error?: number;
+  method: "zscore" | "autoencoder";
+  reason: string;
+  severity: "high" | "medium";
+}
+
+export interface AnomalyFeatures {
+  date: string;
+  close: number;
+  ma20: number | null;
+  price_change_pct: number;
+  volume_ratio: number | null;
+  zscore_20: number | null;
+  bb_pct: number | null;
+  volatility_5: number | null;
+  upper_bb: number | null;
+  lower_bb: number | null;
+}
+
+export interface AnomalyResult {
+  symbol: string;
+  days: number;
+  method: string;
+  total_rows: number;
+  volume_enriched: boolean;
+  zscore_anomalies: AnomalyPoint[];
+  ae_anomalies: AnomalyPoint[];
+  summary: string;
+  latest_features: AnomalyFeatures;
+  sklearn_available: boolean;
+}
+
+export interface AnomalyBatchItem {
+  symbol: string;
+  anomaly_count: number;
+  has_high_severity: boolean;
+  latest_date: string;
+  latest_reason: string;
+  latest_severity: "high" | "medium";
+  zscore_count: number;
+  ae_count: number;
+}
+
+export interface AnomalyBatchResult {
+  scanned: number;
+  with_anomalies: number;
+  results: AnomalyBatchItem[];
 }
 
 // ── Import Result ─────────────────────────────────────────────────────────────

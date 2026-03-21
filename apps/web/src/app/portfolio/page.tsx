@@ -123,7 +123,7 @@ function TodoBanner() {
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950/30 text-sm">
       <span className="font-medium text-yellow-800 dark:text-yellow-300 shrink-0">
-        Missing/stale quotes:
+        報價缺失或過期：
       </span>
       {visible.map((item) => (
         <Link
@@ -138,13 +138,13 @@ function TodoBanner() {
         </Link>
       ))}
       {extra > 0 && (
-        <span className="text-yellow-700 dark:text-yellow-400 text-xs">+{extra} more</span>
+        <span className="text-yellow-700 dark:text-yellow-400 text-xs">+{extra} 筆</span>
       )}
       <Link
         href="/quotes"
         className="ml-auto shrink-0 px-3 py-1 rounded-md bg-yellow-600 text-white text-xs font-medium hover:bg-yellow-700 transition-colors"
       >
-        Go to Quotes
+        前往報價
       </Link>
     </div>
   );
@@ -180,7 +180,7 @@ function RebalanceAlerts() {
               href={alert.type === "stale_quotes" ? "/quotes" : "/positions"}
               className="ml-auto shrink-0 text-xs underline opacity-80 hover:opacity-100"
             >
-              View →
+              查看 →
             </Link>
           )}
         </div>
@@ -220,25 +220,25 @@ function PerfRiskSection({ start, end }: { start: string; end: string }) {
     v == null ? "N/A" : fmtPct(v);
 
   const perfCards = [
-    { title: "P&L (ex-cashflow)", value: fmt(p?.pnlExCashflow), valueClass: pnlClass(p?.pnlExCashflow) },
-    { title: "Realized P&L", value: fmt(p?.realizedPnl), valueClass: pnlClass(p?.realizedPnl) },
-    { title: "Unrealized P&L", value: fmt(p?.unrealizedPnl), valueClass: pnlClass(p?.unrealizedPnl) },
-    { title: "Fees (Commission)", value: fmt(p?.feesCommission), sub: `Tax: ${fmt(p?.feesTax)}` },
-    { title: "Net Cashflow", value: fmt(p?.externalCashflowSum) },
+    { title: "損益（扣除現金流）", value: fmt(p?.pnlExCashflow), valueClass: pnlClass(p?.pnlExCashflow) },
+    { title: "已實現損益", value: fmt(p?.realizedPnl), valueClass: pnlClass(p?.realizedPnl) },
+    { title: "未實現損益", value: fmt(p?.unrealizedPnl), valueClass: pnlClass(p?.unrealizedPnl) },
+    { title: "手續費", value: fmt(p?.feesCommission), sub: `稅費: ${fmt(p?.feesTax)}` },
+    { title: "淨現金流", value: fmt(p?.externalCashflowSum) },
   ];
 
   const riskCards = [
-    { title: "Sharpe Ratio", value: r?.sharpeRatio != null ? r.sharpeRatio.toFixed(2) : "N/A", sub: "annualised, rf=0" },
-    { title: "Win Rate", value: r?.positiveDayRatio != null ? `${r.positiveDayRatio.toFixed(1)}%` : "N/A", sub: "positive days" },
-    { title: "Best Day", value: fmtP(r?.bestDayPct), valueClass: "text-green-600 dark:text-green-400" },
-    { title: "Worst Day", value: fmtP(r?.worstDayPct), valueClass: "text-red-600 dark:text-red-400" },
-    { title: "Daily Vol", value: r?.volatilityPct != null ? `${r.volatilityPct.toFixed(2)}%` : "N/A" },
-    { title: "Trading Days", value: r?.tradingDays != null ? String(r.tradingDays) : "N/A" },
+    { title: "夏普比率", value: r?.sharpeRatio != null ? r.sharpeRatio.toFixed(2) : "N/A", sub: "年化，rf=0" },
+    { title: "勝率", value: r?.positiveDayRatio != null ? `${r.positiveDayRatio.toFixed(1)}%` : "N/A", sub: "正報酬天數" },
+    { title: "最佳單日", value: fmtP(r?.bestDayPct), valueClass: "text-green-600 dark:text-green-400" },
+    { title: "最差單日", value: fmtP(r?.worstDayPct), valueClass: "text-red-600 dark:text-red-400" },
+    { title: "日波動率", value: r?.volatilityPct != null ? `${r.volatilityPct.toFixed(2)}%` : "N/A" },
+    { title: "交易天數", value: r?.tradingDays != null ? String(r.tradingDays) : "N/A" },
   ];
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Performance</h3>
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">績效</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {perfCards.map((c) => (
           <Card key={c.title}>
@@ -252,7 +252,7 @@ function PerfRiskSection({ start, end }: { start: string; end: string }) {
           </Card>
         ))}
       </div>
-      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Risk</h3>
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">風險指標</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {riskCards.map((c) => (
           <Card key={c.title}>
@@ -285,15 +285,15 @@ function TopContributors({ start, end }: { start: string; end: string }) {
   return (
     <div className="grid md:grid-cols-2 gap-4">
       {[
-        { title: "Top Contributors", items: topGainers, positive: true },
-        { title: "Top Detractors",   items: topLosers,  positive: false },
+        { title: "貢獻最大", items: topGainers, positive: true },
+        { title: "拖累最大", items: topLosers,  positive: false },
       ].map(({ title, items, positive }) => (
         <Card key={title}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex justify-between">
               <span>{title}</span>
               <span className="text-xs text-muted-foreground font-normal">
-                Total P&L: <span className={pnlClass(totalPnl)}>${fmtMoney(totalPnl)}</span>
+                總損益：<span className={pnlClass(totalPnl)}>${fmtMoney(totalPnl)}</span>
               </span>
             </CardTitle>
           </CardHeader>
@@ -320,7 +320,7 @@ function TopContributors({ start, end }: { start: string; end: string }) {
                 </li>
               ))}
               {!items.length && (
-                <li className="px-4 py-3 text-xs text-muted-foreground text-center">No data</li>
+                <li className="px-4 py-3 text-xs text-muted-foreground text-center">無資料</li>
               )}
             </ul>
           </CardContent>
@@ -340,7 +340,7 @@ function LatestDigestBanner() {
   return (
     <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/40 text-sm">
       <div className="flex items-center gap-3">
-        <span className="font-medium">Latest Digest</span>
+        <span className="font-medium">最新日報</span>
         <span className="text-muted-foreground">{latest.date}</span>
         {latest.dailyPnl != null && (
           <span className={`tabular-nums font-semibold ${pnlClass(latest.dailyPnl)}`}>
@@ -357,7 +357,7 @@ function LatestDigestBanner() {
         href="/digest"
         className="px-3 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
       >
-        View Digest →
+        查看日報 →
       </Link>
     </div>
   );
@@ -381,7 +381,7 @@ function BenchmarkSection({ start, end, freq }: { start: string; end: string; fr
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Benchmark</h2>
+        <h2 className="text-lg font-semibold">基準比較</h2>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">vs.</span>
           <div className="inline-flex rounded-md border bg-background overflow-hidden text-xs font-medium">
@@ -410,17 +410,17 @@ function BenchmarkSection({ start, end, freq }: { start: string; end: string; fr
         <Card>
           <CardContent className="py-10 text-center space-y-3">
             <p className="text-muted-foreground text-sm">
-              No price data found for{" "}
-              <span className="font-mono font-medium">{bench}</span> in this date range.
+              此日期範圍內找不到{" "}
+              <span className="font-mono font-medium">{bench}</span> 的價格資料。
             </p>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              Bootstrap historical benchmark data (2016→today) in one click.
+              一鍵匯入歷史基準資料（2016至今）。
             </p>
             <Link
               href="/settings#benchmark"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
             >
-              Bootstrap Benchmark Data →
+              匯入基準資料 →
             </Link>
           </CardContent>
         </Card>
@@ -442,31 +442,31 @@ function BenchmarkSection({ start, end, freq }: { start: string; end: string; fr
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 {
-                  title: "Excess Return",
+                  title: "超額報酬",
                   value: metrics.excessReturnPct != null ? fmtPct(metrics.excessReturnPct) : "N/A",
-                  sub: "cumulative vs benchmark",
+                  sub: "累計 vs 基準",
                   valueClass: pnlClass(metrics.excessReturnPct),
                 },
                 {
-                  title: "Tracking Error",
+                  title: "追蹤誤差",
                   value: metrics.trackingErrorAnnualized != null
                     ? `${metrics.trackingErrorAnnualized.toFixed(2)}%`
                     : "N/A",
-                  sub: "annualised",
+                  sub: "年化",
                 },
                 {
-                  title: "Correlation",
+                  title: "相關性",
                   value: metrics.correlation != null
                     ? metrics.correlation.toFixed(3)
                     : "N/A",
-                  sub: "period returns",
+                  sub: "區間報酬",
                 },
                 {
-                  title: "Info. Ratio",
+                  title: "資訊比率",
                   value: metrics.informationRatio != null
                     ? metrics.informationRatio.toFixed(3)
                     : "N/A",
-                  sub: "annualised excess / TE",
+                  sub: "年化超額/追蹤誤差",
                   valueClass: pnlClass(metrics.informationRatio),
                 },
               ].map((c) => (
@@ -518,7 +518,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Portfolio</h1>
+      <h1 className="text-2xl font-bold">投資組合</h1>
 
       {/* Alerts row: To-Do + Rebalance + Digest Banner */}
       <div className="space-y-2">
@@ -541,14 +541,14 @@ export default function PortfolioPage() {
             </Card>
           ))
         ) : snapshot.isError ? (
-          <p className="col-span-4 text-destructive text-sm">Failed to load snapshot</p>
+          <p className="col-span-4 text-destructive text-sm">快照載入失敗</p>
         ) : (
           <>
-            <StatCard title="Total Equity" value={`$${fmtMoney(snap?.totalEquity)}`} />
-            <StatCard title="Cash" value={`$${fmtMoney(snap?.cash)}`} />
-            <StatCard title="Market Value" value={`$${fmtMoney(snap?.marketValue)}`} />
+            <StatCard title="總資產" value={`$${fmtMoney(snap?.totalEquity)}`} />
+            <StatCard title="現金" value={`$${fmtMoney(snap?.cash)}`} />
+            <StatCard title="市值" value={`$${fmtMoney(snap?.marketValue)}`} />
             <StatCard
-              title="Cum. Return"
+              title="累積報酬"
               value={lastPoint?.cumReturnPct != null ? fmtPct(lastPoint.cumReturnPct) : "N/A"}
               valueClass={pnlClass(lastPoint?.cumReturnPct)}
             />
@@ -559,12 +559,12 @@ export default function PortfolioPage() {
       {/* Daily P&L */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Daily P&L</h2>
+          <h2 className="text-lg font-semibold">每日損益</h2>
           <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
             <ToggleGroup<DailyMode>
               options={[
-                { value: "pnl",   label: "P&L (ex cashflow)" },
-                { value: "delta", label: "ΔEquity" },
+                { value: "pnl",   label: "損益（扣現金流）" },
+                { value: "delta", label: "資產變動" },
               ]}
               value={dailyMode}
               onChange={setDailyMode}
@@ -579,8 +579,8 @@ export default function PortfolioPage() {
             />
             <ToggleGroup<"B" | "D">
               options={[
-                { value: "B", label: "Weekdays" },
-                { value: "D", label: "All Days"  },
+                { value: "B", label: "交易日" },
+                { value: "D", label: "所有日" },
               ]}
               value={dailyFreq}
               onChange={setDailyFreq}
@@ -592,7 +592,7 @@ export default function PortfolioPage() {
           <Skeleton className="h-[280px] w-full rounded-lg" />
         ) : daily.isError ? (
           <Card>
-            <p className="p-6 text-center text-destructive text-sm">Failed to load daily data</p>
+            <p className="p-6 text-center text-destructive text-sm">每日資料載入失敗</p>
           </Card>
         ) : (
           <Card>
@@ -611,7 +611,7 @@ export default function PortfolioPage() {
       {/* Time range + Charts */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Equity Curve</h2>
+          <h2 className="text-lg font-semibold">權益曲線</h2>
           <TimeRangePicker
             value={range}
             onChange={(r, p) => {
@@ -634,7 +634,7 @@ export default function PortfolioPage() {
         <div className="grid md:grid-cols-2 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Cash vs Market Value</CardTitle>
+              <CardTitle className="text-sm font-medium">現金 vs 市值</CardTitle>
             </CardHeader>
             <CardContent>
               {curve.isLoading ? (
@@ -647,7 +647,7 @@ export default function PortfolioPage() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Asset Allocation</CardTitle>
+              <CardTitle className="text-sm font-medium">資產配置</CardTitle>
             </CardHeader>
             <CardContent>
               {snapshot.isLoading ? (
@@ -665,14 +665,14 @@ export default function PortfolioPage() {
 
       {/* Top Contributors */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Top Contributors</h2>
+        <h2 className="text-lg font-semibold">貢獻度排行</h2>
         <TopContributors start={curveParams.start} end={curveParams.end} />
       </div>
 
       {/* Performance & Risk */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Performance & Risk</h2>
+          <h2 className="text-lg font-semibold">績效與風險</h2>
           <span className="text-xs text-muted-foreground">{curveParams.start} → {curveParams.end}</span>
         </div>
         <PerfRiskSection start={curveParams.start} end={curveParams.end} />
@@ -687,7 +687,7 @@ export default function PortfolioPage() {
 
       {/* Positions table */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Open Positions</h2>
+        <h2 className="text-lg font-semibold">持倉明細</h2>
         <Card>
           {positions.isLoading ? (
             <div className="p-4 space-y-2">
@@ -698,19 +698,19 @@ export default function PortfolioPage() {
           ) : positions.isError ? (
             <p className="p-4 text-destructive text-sm">Failed to load positions</p>
           ) : !positions.data?.length ? (
-            <p className="p-6 text-center text-muted-foreground text-sm">No open positions</p>
+            <p className="p-6 text-center text-muted-foreground text-sm">目前無持倉</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Avg Cost</TableHead>
-                  <TableHead className="text-right">Last Price</TableHead>
-                  <TableHead className="text-right">Market Value</TableHead>
-                  <TableHead className="text-right">Unrealized P&L</TableHead>
-                  <TableHead className="text-right">Realized P&L</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>代號</TableHead>
+                  <TableHead className="text-right">數量</TableHead>
+                  <TableHead className="text-right">均成本</TableHead>
+                  <TableHead className="text-right">現價</TableHead>
+                  <TableHead className="text-right">市值</TableHead>
+                  <TableHead className="text-right">未實現損益</TableHead>
+                  <TableHead className="text-right">已實現損益</TableHead>
+                  <TableHead>來源</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

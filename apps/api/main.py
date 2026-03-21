@@ -18,9 +18,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import deps
 from .tz import TZ
 from .routers import (
-    cash, demo, equity, positions, quotes, trades, daily, lots,
+    cash, demo, equity, positions, trades, daily, lots,
     todo, perf, rebalance, export_import, backup, benchmark, risk, execution,
-    universe, watchlist, catalyst, overview, chat,
+    universe, watchlist, catalyst, overview, chat, alerts, chip, rolling,
+    chart, revenue, allocation, screener, anomaly,
 )
 from .routers import quotes_refresh, digest as digest_router
 
@@ -41,6 +42,118 @@ async def _run_scheduled_refresh() -> None:
         )
     except Exception:
         logger.exception("Scheduled refresh failed")
+
+
+async def _run_daily_discord_notification() -> None:
+    """Daily 18:30 Asia/Taipei — post alerts + chip + sector check to Discord."""
+    import json
+    import os
+    import urllib.request
+    import urllib.parse
+    import datetime
+
+    token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
+    channel_id = os.getenv("DISCORD_CHANNEL_ID", "").strip()
+    if not token or not channel_id:
+        logger.warning("DISCORD_BOT_TOKEN or DISCORD_CHANNEL_ID not set — skipping notification")
+        return
+
+    try:
+        ledger = deps.get_ledger()
+        today = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+
+        # 1. Check price alerts
+        from .routers.alerts import check_alerts as _check_alerts_fn, _get_db_path, _ensure_table
+        db_path = _get_db_path()
+        _ensure_table(db_path)
+        import sqlite3
+        with sqlite3.connect(db_path) as con:
+            con.row_factory = sqlite3.Row
+            active_alerts = con.execute("SELECT * FROM price_alerts WHERE triggered=0").fetchall()
+
+        triggered_alerts = []
+        pending_alerts = []
+        for alert in active_alerts:
+            sym = alert["symbol"]
+            price_info = ledger.last_price_with_source(symbol=sym, as_of=today)
+            current = price_info.get("price")
+            if current is None:
+                continue
+            fired = (
+                (alert["alert_type"] == "stop_loss" and current <= alert["price"]) or
+                (alert["alert_type"] == "target" and current >= alert["price"])
+            )
+            if fired:
+                with sqlite3.connect(db_path) as con:
+                    con.execute("UPDATE price_alerts SET triggered=1, triggered_at=? WHERE id=?",
+                                (today, alert["id"]))
+                triggered_alerts.append(f"🔔 **{sym}** {alert['alert_type'].upper()} @ {alert['price']} | 現價 {current}")
+            else:
+                gap = round((current - alert["price"]) / alert["price"] * 100, 1)
+                pending_alerts.append(f"  {sym} {alert['alert_type']} {alert['price']} | 現價 {current} ({gap:+.1f}%)")
+
+        # 2. Sector check
+        from .routers.rolling import sector_check as _sector_check_fn
+        snap = ledger.equity_snapshot(as_of=today)
+        positions = snap.get("positions", {})
+        with sqlite3.connect(db_path) as con:
+            con.row_factory = sqlite3.Row
+            companies = {r["symbol"]: r for r in con.execute(
+                "SELECT symbol, sector FROM company_master").fetchall()}
+
+        sector_map: dict = {}
+        total_mv = sum((pos.get("market_value") or 0) for pos in positions.values())
+        for sym, pos in positions.items():
+            mv = pos.get("market_value") or 0
+            sector = companies.get(sym, {}).get("sector") or "未分類"
+            if sector not in sector_map:
+                sector_map[sector] = 0.0
+            sector_map[sector] += mv
+
+        sector_lines = []
+        sector_alerts = []
+        for sec, mv in sorted(sector_map.items(), key=lambda x: -x[1]):
+            pct = round(mv / total_mv * 100, 1) if total_mv > 0 else 0
+            sector_lines.append(f"  {sec} {pct}%")
+            if pct > 50:
+                sector_alerts.append(f"⚠️ {sec} 占 {pct}% 超過 50%")
+
+        # Build message
+        lines = [f"📊 **每日報告 {today}**\n"]
+
+        if triggered_alerts:
+            lines.append("**🚨 觸發警示：**")
+            lines.extend(triggered_alerts)
+        else:
+            lines.append("✅ 無觸發警示")
+
+        if pending_alerts:
+            lines.append("\n**監控中：**")
+            lines.extend(pending_alerts)
+
+        lines.append("\n**產業分布：**")
+        lines.extend(sector_lines)
+        if sector_alerts:
+            lines.extend(sector_alerts)
+
+        message = "\n".join(lines)
+
+        # Post to Discord
+        payload = json.dumps({"content": message}).encode()
+        req = urllib.request.Request(
+            f"https://discord.com/api/v10/channels/{channel_id}/messages",
+            data=payload,
+            headers={
+                "Authorization": f"Bot {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            logger.info("Daily Discord notification sent: status=%d", resp.status)
+
+    except Exception:
+        logger.exception("Daily Discord notification failed")
 
 
 async def _run_scheduled_digest() -> None:
@@ -91,6 +204,13 @@ async def lifespan(app: FastAPI):
         id="daily_refresh",
         replace_existing=True,
     )
+    # APScheduler: daily Discord notification at 18:30 Asia/Taipei
+    _scheduler.add_job(
+        _run_daily_discord_notification,
+        CronTrigger(hour=18, minute=30, timezone=TZ),
+        id="daily_discord_notification",
+        replace_existing=True,
+    )
     # APScheduler: daily digest generation at 20:00 Asia/Taipei
     _scheduler.add_job(
         _run_scheduled_digest,
@@ -131,7 +251,6 @@ app.include_router(cash.router,           prefix=PREFIX, tags=["cash"])
 app.include_router(trades.router,         prefix=PREFIX, tags=["trades"])
 app.include_router(positions.router,      prefix=PREFIX, tags=["positions"])
 app.include_router(equity.router,         prefix=PREFIX, tags=["equity"])
-app.include_router(quotes.router,         prefix=PREFIX, tags=["quotes"])
 app.include_router(demo.router,           prefix=PREFIX, tags=["demo"])
 app.include_router(daily.router,          prefix=PREFIX, tags=["equity"])
 app.include_router(lots.router,           prefix=PREFIX, tags=["lots"])
@@ -150,6 +269,14 @@ app.include_router(watchlist.router,      prefix=PREFIX, tags=["watchlist"])
 app.include_router(catalyst.router,      prefix=PREFIX, tags=["catalyst"])
 app.include_router(overview.router,      prefix=PREFIX, tags=["overview"])
 app.include_router(chat.router,          prefix=PREFIX, tags=["chat"])
+app.include_router(alerts.router,        prefix=PREFIX, tags=["alerts"])
+app.include_router(chip.router,          prefix=PREFIX, tags=["chip"])
+app.include_router(rolling.router,       prefix=PREFIX, tags=["rolling"])
+app.include_router(chart.router,         prefix=PREFIX, tags=["chart"])
+app.include_router(revenue.router,       prefix=PREFIX, tags=["revenue"])
+app.include_router(allocation.router,    prefix=PREFIX, tags=["allocation"])
+app.include_router(screener.router,      prefix=PREFIX, tags=["screener"])
+app.include_router(anomaly.router,       prefix=PREFIX, tags=["anomaly"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

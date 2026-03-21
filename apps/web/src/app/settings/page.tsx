@@ -82,14 +82,13 @@ function ProviderSection() {
                     and copy your API token.
                   </li>
                   <li>
-                    Add to <code className="bg-background px-1 rounded">docker-compose.yml</code>
-                    {" "}under api <code className="bg-background px-1 rounded">environment</code>:
+                    Add to your <code className="bg-background px-1 rounded">.env</code> file:
                     <pre className="mt-1 bg-background p-2 rounded text-xs overflow-x-auto">
-                      FINMIND_TOKEN: your_token_here
+                      FINMIND_TOKEN=your_token_here
                     </pre>
                   </li>
                   <li>
-                    Restart: <code className="bg-background px-1 rounded">docker compose up -d --build</code>
+                    Restart: <code className="bg-background px-1 rounded">docker compose up -d api</code>
                   </li>
                 </ol>
               </div>

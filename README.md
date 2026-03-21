@@ -15,7 +15,8 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ## Highlights
 
 - **AI portfolio analyst (J.A.R.V.I.S.)** — Claude claude-opus-4-6 with 7 tool-use functions; agentic loop autonomously queries positions, risk metrics, P&L, and lot details before answering in natural language; SSE streaming renders token-by-token in a floating HUD panel
-- **End-to-end ownership** — pure-Python core library → 30+ REST endpoints → TypeScript frontend, zero third-party portfolio SDK
+- **Market anomaly detection** — PCA-based linear autoencoder on 6-feature multivariate time-series (price, volume, volatility, Z-score, Bollinger Band %B); data-driven threshold (μ + 2.5σ reconstruction error) replaces fixed contamination ratios; batch-scans all active positions simultaneously; analogous to multivariate SPC in manufacturing
+- **End-to-end ownership** — pure-Python core library → 40+ REST endpoints → TypeScript frontend, zero third-party portfolio SDK
 - **Domain-Driven Design** — separate `domain/` layer decouples business logic (risk, execution, overview) from API routing and persistence
 - **Quantitative analytics** — Sharpe ratio, max drawdown, VaR, volatility; benchmark comparison with tracking error, information ratio, and correlation vs. 0050 / SPY / QQQ / TAIEX
 - **Investment research pipeline** — Universe (company DB) → Watchlist (investment thesis) → Catalyst (event tracking) → Daily Digest (auto-generated report)
@@ -31,7 +32,9 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ┌───────────────────────────────────────────────────────────────┐
 │  Next.js 14  ·  TypeScript  ·  TanStack Query v5  ·  shadcn   │
 │  /overview /portfolio /positions /lots /universe /watchlist    │
-│  /catalyst /digest /offsetting /quotes /settings  …           │
+│  /catalyst /digest /offsetting /quotes /settings              │
+│  /anomaly /alerts /allocation /chip /revenue /rolling         │
+│  /screener  …                                                  │
 │                                                                │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │  J.A.R.V.I.S. floating panel  (Ctrl+J, any page)        │  │
@@ -40,17 +43,20 @@ A full-stack personal portfolio tracker and investment research platform — bui
 └──────────────────────────┬────────────────────────────────────┘
                            │  HTTP  (server-side proxy, no CORS)
 ┌──────────────────────────▼────────────────────────────────────┐
-│  FastAPI  ·  30+ endpoints  ·  16 routers                      │
+│  FastAPI  ·  40+ endpoints  ·  22 routers                      │
 │  APScheduler  (daily quote refresh @ 18:00 Asia/Taipei)        │
 │  BackgroundTasks  (auto-refresh on every trade POST)           │
 │                                                                │
 │  POST /api/chat/stream ──► Anthropic Claude API                │
 │    agentic loop: tool_use → execute → tool_result → stream     │
+│                                                                │
+│  GET /api/anomaly/batch ──► analysis/ (PCA Autoencoder)        │
+│    6-feature time-series → reconstruction error → anomalies    │
 └──────┬──────────────────┬──────────────────┬──────────────────┘
        │                  │                  │
   domain/ layer      ledger/ library    providers/
   (DDD services)     (pure Python core)  TWSE · FinMind · Yahoo
-       │                  │
+       │                  │              yfinance (volume fallback)
        └──────────────────┴──── SQLite  (Docker named volume)
 ```
 
@@ -62,6 +68,8 @@ A full-stack personal portfolio tracker and investment research platform — bui
 | SSE over WebSocket for chat | Unidirectional server-push is sufficient; simpler than full duplex; no connection keep-alive overhead |
 | Pure Python `ledger/` library with zero web dependencies | Independently testable; usable as CLI or imported without running the API |
 | `domain/` layer separate from `apps/api/routers/` | Routers handle HTTP concerns only; business logic is framework-agnostic |
+| PCA reconstruction error over Isolation Forest contamination | Data-driven threshold adapts to each asset's own baseline; no need to specify expected anomaly ratio |
+| Static `/anomaly/batch` route defined before `/{symbol}` | Prevents FastAPI path parameter capture; required explicit route ordering |
 | Pluggable `PriceProvider` ABC | Swap or add data sources without touching the scheduler or refresh service |
 | Next.js server-side `API_URL` proxy | Eliminates CORS; frontend never needs direct access to the API port |
 
@@ -102,6 +110,31 @@ ANTHROPIC_API_KEY=sk-ant-... DB_PATH=data/ledger.db uvicorn apps.api.main:app --
 - *"Which of my positions is most underwater?"*
 - *"What is my Sharpe ratio and how does it compare to a 60/40 portfolio?"*
 - *"Show me the lot breakdown for AAPL and explain my average cost"*
+
+---
+
+## Market Anomaly Detection
+
+`/anomaly` — scans for statistically unusual price and volume behavior across the portfolio. Framed around the **Informed Trading Hypothesis**: significant market events often leave traces in price and volume before any public announcement.
+
+**How it works:**
+
+```
+analysis/anomaly_detector.py
+  ├─► Z-score detector (rolling 20-day, σ=2.5)
+  │     Detects sudden single-variable spikes (price or volume)
+  │
+  └─► PCA Autoencoder (sklearn, n_components=2)
+        6 features: [close, volume_ratio, price_change_pct,
+                     volatility_5, zscore_20, bb_pct]
+        Compress → reconstruct → MSE per point
+        Threshold: mean(RE) + 2.5 × std(RE)  ← fully data-driven
+        Flags points where reconstruction error exceeds threshold
+```
+
+**Batch scan** (`GET /api/anomaly/batch`) queries all active positions at once and returns a compact summary — analogous to monitoring all manufacturing stations simultaneously.
+
+**Volume enrichment** — when a symbol has no volume data in the local DB, the detector automatically fetches volume from Yahoo Finance via `yfinance` and falls back silently if unavailable.
 
 ---
 
@@ -163,6 +196,15 @@ Bootstrap historical prices from Yahoo Finance (no API key) for 0050, TAIEX, SPY
 - Tracking error (annualized)
 - Pearson correlation
 - Information ratio
+
+### Market Anomaly Detection
+
+`/anomaly` — two panels:
+
+1. **Batch scan** — auto-detects anomalies across all active positions; shows per-symbol anomaly count, severity badge, and latest signal description
+2. **Single symbol query** — enter any ticker; returns unified table of Z-score and autoencoder anomalies sorted by date, with close price, daily return %, severity level, and plain-language reason
+
+Integrates with the catalyst calendar: anomaly signals provide early context; catalyst events explain the fundamental reason.
 
 ### Investment Research Pipeline
 
@@ -243,6 +285,13 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `GET` | `/api/risk/metrics` | Sharpe, volatility, best/worst day, win rate |
 | `GET` | `/api/rebalance/check` | Concentration and cash-level alerts |
 
+### Anomaly Detection
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/anomaly/batch` | Scan all active positions; returns per-symbol anomaly summary |
+| `GET` | `/api/anomaly/{symbol}` | Z-score + PCA autoencoder anomalies for a single ticker (`?days=&ae_threshold=`) |
+
 ### AI Chat
 
 | Method | Path | Description |
@@ -315,6 +364,13 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `/portfolio` | Equity curve, daily P&L chart, benchmark comparison, asset allocation donut |
 | `/positions` | Holdings with cost impact analysis and expandable lot details |
 | `/lots/[symbol]` | Lot-level breakdown + bubble chart (unrealized % vs. underwater %) |
+| `/anomaly` | Market anomaly detection: batch portfolio scan + single symbol Z-score/autoencoder query |
+| `/alerts` | Price alert management |
+| `/allocation` | Portfolio allocation analysis and targets |
+| `/chip` | Chip distribution (籌碼) analysis |
+| `/revenue` | Revenue trend analysis |
+| `/rolling` | Rolling performance metrics |
+| `/screener` | Stock screener |
 | `/universe` | Company research database with thesis notes |
 | `/watchlist` | Investment thesis tracker with coverage check |
 | `/catalyst` | Event log with Plan A/B/C/D scenario planner |
@@ -334,6 +390,9 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 
 ```
 stock_ledger/
+├── analysis/                  # Quantitative analysis modules
+│   ├── anomaly_detector.py    #   PCA autoencoder + Z-score anomaly detection
+│   └── time_series.py         #   Rolling statistics helpers
 ├── domain/                    # Domain layer (DDD) — framework-agnostic
 │   ├── overview/              #   Dashboard aggregation service
 │   ├── execution/             #   Loss-offsetting simulation
@@ -350,14 +409,15 @@ stock_ledger/
 │   │   ├── providers/         #   PriceProvider ABC + TWSE, FinMind, Yahoo, Auto
 │   │   ├── services/          #   QuotesRefreshService
 │   │   ├── routers/
+│   │   │   ├── anomaly.py     #   GET /api/anomaly/batch, /api/anomaly/{symbol}
 │   │   │   ├── chat.py        #   POST /api/chat/stream — Claude agentic loop + SSE
-│   │   │   └── …              #   15 other route modules
+│   │   │   └── …              #   20 other route modules
 │   │   ├── config.py          #   Environment config
 │   │   ├── deps.py            #   FastAPI dependencies
 │   │   └── main.py            #   App factory + APScheduler lifespan
 │   └── web/                   # Next.js 14 frontend
 │       └── src/
-│           ├── app/           #   14 page routes
+│           ├── app/           #   21 page routes
 │           ├── components/
 │           │   ├── JarvisPanel.tsx   # AI chat HUD (floating, any page)
 │           │   ├── Fab.tsx           # Speed-dial for data entry
@@ -376,8 +436,9 @@ stock_ledger/
 | Layer | Technology |
 |---|---|
 | AI | Anthropic Claude claude-opus-4-6 (tool use, SSE streaming) |
+| Anomaly Detection | scikit-learn PCA (linear autoencoder), Z-score (rolling window) |
 | Core library | Python 3.11, SQLite (stdlib only) |
-| Backend | FastAPI, Uvicorn, Pandas, APScheduler |
+| Backend | FastAPI, Uvicorn, Pandas, APScheduler, yfinance |
 | Frontend | Next.js 14, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui |
 | Testing | Python `unittest` (336 tests, 13 files) |
 | Container | Docker, Docker Compose |
