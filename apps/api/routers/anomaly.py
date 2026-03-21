@@ -40,9 +40,20 @@ def _try_enrich_volume(rows: list[dict], symbol: str) -> list[dict]:
         start = rows[0]["date"]
         end_date = rows[-1]["date"]
 
-        # Add 5-day buffer for market closures
-        ticker = yf.Ticker(symbol)
+        # Taiwan stocks need .TW (TWSE) or .TWO (TPEX) suffix on Yahoo Finance
+        def _yf_symbol(sym: str) -> str:
+            if sym.isdigit():
+                return f"{sym}.TW"
+            return sym
+
+        yf_sym = _yf_symbol(symbol)
+        ticker = yf.Ticker(yf_sym)
         hist = ticker.history(start=start, end=end_date, auto_adjust=True)
+
+        # Fallback to .TWO for OTC-listed Taiwan stocks
+        if hist.empty and symbol.isdigit():
+            ticker = yf.Ticker(f"{symbol}.TWO")
+            hist = ticker.history(start=start, end=end_date, auto_adjust=True)
 
         if hist.empty:
             return rows
@@ -64,8 +75,58 @@ def _try_enrich_volume(rows: list[dict], symbol: str) -> list[dict]:
         return rows
 
 
+def _tw_yf_ticker(symbol: str) -> str:
+    """Convert a Taiwan stock symbol to Yahoo Finance ticker format."""
+    if symbol.isdigit():
+        return f"{symbol}.TW"
+    return symbol
+
+
+def _fetch_yfinance_history(symbol: str, days: int) -> list[dict]:
+    """Fetch historical OHLCV from Yahoo Finance as a fallback data source.
+
+    Used when the local DB has insufficient rows for anomaly detection.
+    Returns rows in ascending date order, never raises.
+    """
+    try:
+        import yfinance as yf
+        from datetime import date, timedelta
+
+        yf_sym = _tw_yf_ticker(symbol)
+        end = date.today()
+        start = end - timedelta(days=days + 90)  # buffer for weekends/holidays
+
+        ticker = yf.Ticker(yf_sym)
+        hist = ticker.history(start=str(start), end=str(end), auto_adjust=True)
+
+        # Fallback to .TWO for OTC-listed stocks
+        if hist.empty and symbol.isdigit():
+            ticker = yf.Ticker(f"{symbol}.TWO")
+            hist = ticker.history(start=str(start), end=str(end), auto_adjust=True)
+
+        if hist.empty:
+            return []
+
+        rows = []
+        for idx, row in hist.iterrows():
+            rows.append({
+                "date": idx.strftime("%Y-%m-%d"),
+                "close": float(row["Close"]),
+                "volume": float(row.get("Volume", 0) or 0),
+            })
+        # Return only the requested window
+        return rows[-days:] if len(rows) > days else rows
+
+    except Exception:
+        return []
+
+
 def _load_prices(symbol: str, days: int, as_of: Optional[str] = None) -> list[dict]:
-    """Load price rows, joining volume from chip_data if available."""
+    """Load price rows, joining volume from chip_data if available.
+
+    Falls back to Yahoo Finance when the DB has fewer than 25 rows,
+    which is common for Taiwan stocks that haven't been backfilled.
+    """
     warmup = 80  # extra rows for rolling window warm-up
     with sqlite3.connect(DB_PATH) as con:
         con.row_factory = sqlite3.Row
@@ -99,10 +160,28 @@ def _load_prices(symbol: str, days: int, as_of: Optional[str] = None) -> list[di
             ).fetchall()
 
     if not rows:
-        return []
+        db_rows: list[dict] = []
+    else:
+        db_rows = [
+            {"date": r["date"], "close": float(r["close"]), "volume": float(r["volume"] or 0)}
+            for r in reversed(rows)
+        ]
 
-    return [{"date": r["date"], "close": float(r["close"]), "volume": float(r["volume"] or 0)}
-            for r in reversed(rows)]
+    # If DB has insufficient data, supplement with Yahoo Finance history
+    if len(db_rows) < 25:
+        yf_rows = _fetch_yfinance_history(symbol, days + warmup)
+        if yf_rows:
+            # Merge: yfinance as base, override with any DB rows (more authoritative)
+            db_date_map = {r["date"]: r for r in db_rows}
+            merged = []
+            for r in yf_rows:
+                if r["date"] in db_date_map:
+                    merged.append(db_date_map[r["date"]])
+                else:
+                    merged.append(r)
+            return merged
+
+    return db_rows
 
 
 def _active_position_symbols() -> list[str]:
