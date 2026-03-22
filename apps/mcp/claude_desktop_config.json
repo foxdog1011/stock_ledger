@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Sample config snippet — merge the 'mcpServers' block into your own claude_desktop_config.json.",
+    "Transport note:",
+    "  - The entry below uses STDIO transport: Claude Desktop spawns 'docker exec -i ...'",
+    "    and communicates over stdin/stdout. The container must already be running.",
+    "  - Alternatively, configure SSE transport by pointing Claude Desktop at",
+    "    http://localhost:8001/sse once the container exposes that endpoint.",
+    "    SSE transport config example:",
+    "      \"stock-ledger\": { \"url\": \"http://localhost:8001/sse\" }"
+  ],
+  "mcpServers": {
+    "stock-ledger": {
+      "command": "docker",
+      "args": ["exec", "-i", "stock-ledger-mcp", "python", "apps/mcp/server.py"],
+      "env": {}
+    }
+  }
+}
