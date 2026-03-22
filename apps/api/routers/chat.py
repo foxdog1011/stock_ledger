@@ -8,6 +8,7 @@ import sqlite3
 from datetime import date, timedelta
 from typing import Any, Generator
 
+import httpx
 from anthropic import Anthropic
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -17,6 +18,8 @@ from ..deps import get_ledger
 from ledger import StockLedger
 
 router = APIRouter()
+
+MCP_URL = os.getenv("MCP_URL", "http://mcp:8001/mcp")
 
 SYSTEM_PROMPT = """\
 You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), an AI portfolio analyst \
@@ -187,112 +190,103 @@ def _default_range() -> tuple[str, str]:
     return (today - timedelta(days=365)).isoformat(), today.isoformat()
 
 
+# ---------------------------------------------------------------------------
+# MCP client helpers (streamable-http with session + SSE parsing)
+# ---------------------------------------------------------------------------
+
+_MCP_SESSION_ID: str | None = None
+_MCP_HEADERS = {"Accept": "application/json, text/event-stream"}
+
+
+def _parse_sse(text: str) -> Any:
+    """Extract JSON payload from an SSE response body."""
+    for line in text.splitlines():
+        if line.startswith("data:"):
+            return json.loads(line[5:].strip())
+    return json.loads(text)  # fallback: plain JSON
+
+
+def _mcp_init() -> str | None:
+    """Initialize an MCP session and return the session ID."""
+    try:
+        resp = httpx.post(
+            MCP_URL,
+            json={
+                "jsonrpc": "2.0", "id": 0, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "jarvis", "version": "1.0"},
+                },
+            },
+            headers=_MCP_HEADERS,
+            timeout=10.0,
+        )
+        return resp.headers.get("mcp-session-id")
+    except Exception:
+        return None
+
+
+def _mcp_post(payload: dict) -> Any:
+    """POST a JSON-RPC request to the MCP server, managing the session."""
+    global _MCP_SESSION_ID
+    if _MCP_SESSION_ID is None:
+        _MCP_SESSION_ID = _mcp_init()
+
+    headers = {**_MCP_HEADERS}
+    if _MCP_SESSION_ID:
+        headers["mcp-session-id"] = _MCP_SESSION_ID
+
+    resp = httpx.post(MCP_URL, json=payload, headers=headers, timeout=30.0)
+    if resp.status_code == 400:
+        # Session expired — re-initialize once
+        _MCP_SESSION_ID = _mcp_init()
+        if _MCP_SESSION_ID:
+            headers["mcp-session-id"] = _MCP_SESSION_ID
+        resp = httpx.post(MCP_URL, json=payload, headers=headers, timeout=30.0)
+
+    resp.raise_for_status()
+    return _parse_sse(resp.text)
+
+
+def _mcp_call(name: str, arguments: dict) -> Any:
+    """Call a tool on the MCP server and return parsed result."""
+    try:
+        data = _mcp_post({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        })
+        if "error" in data:
+            return {"error": data["error"].get("message", str(data["error"]))}
+        content = data.get("result", {}).get("content", [])
+        if content and content[0].get("type") == "text":
+            return json.loads(content[0]["text"])
+        return {"error": "No content in MCP response"}
+    except Exception as exc:
+        return {"error": str(exc), "tool": name}
+
+
+def _fetch_mcp_tools() -> list[dict]:
+    """Fetch available tools from MCP server, converted to Anthropic tool format."""
+    try:
+        data = _mcp_post({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+        tools = data.get("result", {}).get("tools", [])
+        return [
+            {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "input_schema": t.get("inputSchema", {"type": "object", "properties": {}}),
+            }
+            for t in tools
+        ]
+    except Exception:
+        return TOOLS  # fallback to hardcoded tools if MCP is unavailable
+
+
 def _run_tool(name: str, input_: dict, ledger: StockLedger) -> Any:
-    if name == "get_portfolio_snapshot":
-        return ledger.equity_snapshot()
-
-    if name == "get_positions":
-        return ledger.position_pnl(include_closed=input_.get("include_closed", False))
-
-    if name == "get_cash_balance":
-        return {"balance": ledger.cash_balance()}
-
-    if name == "get_recent_trades":
-        limit = int(input_.get("limit", 20))
-        return ledger.trade_history()[:limit]
-
-    if name == "get_lots":
-        return ledger.lots_by_method(input_["symbol"].upper(), input_.get("method", "fifo"))
-
-    if name == "get_perf_summary":
-        default_start, default_end = _default_range()
-        start = input_.get("start") or default_start
-        end = input_.get("end") or default_end
-        daily = ledger.daily_equity(start=start, end=end, freq="B")
-        if not daily:
-            return {"error": "No equity data for this range"}
-        external_cf = sum(d["external_cashflow"] for d in daily)
-        with sqlite3.connect(str(ledger.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT SUM(commission) AS c, SUM(tax) AS t FROM trades"
-                " WHERE date >= ? AND date <= ? AND is_void = 0",
-                (start, end),
-            ).fetchone()
-        return {
-            "start": start,
-            "end": end,
-            "start_equity": daily[0]["total_equity"],
-            "end_equity": daily[-1]["total_equity"],
-            "pnl_ex_cashflow": round(daily[-1]["total_equity"] - daily[0]["total_equity"] - external_cf, 2),
-            "external_cashflow_sum": round(external_cf, 2),
-            "fees_commission": round(float(row["c"] or 0), 2),
-            "fees_tax": round(float(row["t"] or 0), 2),
-        }
-
-    if name == "get_risk_metrics":
-        default_start, default_end = _default_range()
-        start = input_.get("start") or default_start
-        end = input_.get("end") or default_end
-        daily = ledger.daily_equity(start=start, end=end, freq="B")
-        returns = [d["daily_return_pct"] for d in daily if d.get("daily_return_pct") is not None]
-        if not returns:
-            return {"error": "No return data for this range"}
-        n = len(returns)
-        avg = sum(returns) / n
-        variance = sum((r - avg) ** 2 for r in returns) / n if n > 1 else 0.0
-        std_dev = math.sqrt(variance) if variance > 0 else 0.0
-        return {
-            "start": start,
-            "end": end,
-            "sharpe_ratio": round((avg / std_dev) * math.sqrt(252), 4) if std_dev > 0 else None,
-            "positive_day_ratio": round(sum(1 for r in returns if r > 0) / n * 100, 2),
-            "worst_day_pct": round(min(returns), 4),
-            "best_day_pct": round(max(returns), 4),
-            "trading_days": n,
-            "volatility_pct": round(std_dev, 4),
-        }
-
-    if name == "add_trade":
-        symbol = input_["symbol"].upper()
-        trade_id = ledger.add_trade(
-            date=input_["date"],
-            symbol=symbol,
-            side=input_["side"],
-            qty=float(input_["qty"]),
-            price=float(input_["price"]),
-            commission=float(input_.get("commission") or 0),
-            tax=float(input_.get("tax") or 0),
-            note=str(input_.get("note") or ""),
-        )
-        total = float(input_["qty"]) * float(input_["price"])
-        return {
-            "status": "ok",
-            "trade_id": trade_id,
-            "date": input_["date"],
-            "symbol": symbol,
-            "side": input_["side"],
-            "qty": float(input_["qty"]),
-            "price": float(input_["price"]),
-            "commission": float(input_.get("commission") or 0),
-            "tax": float(input_.get("tax") or 0),
-            "total": round(total, 2),
-        }
-
-    if name == "add_cash":
-        ledger.add_cash(
-            date=input_["date"],
-            amount=float(input_["amount"]),
-            note=str(input_.get("note") or ""),
-        )
-        return {
-            "status": "ok",
-            "date": input_["date"],
-            "amount": float(input_["amount"]),
-            "type": "deposit" if float(input_["amount"]) >= 0 else "withdrawal",
-        }
-
-    return {"error": f"Unknown tool: {name}"}
+    """Proxy tool calls to the MCP server."""
+    return _mcp_call(name, input_)
 
 
 def _sse_event(payload: dict) -> str:
@@ -311,6 +305,7 @@ def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = 
         page_label=page_context or "unknown page",
     )
     current_messages = list(messages)
+    available_tools = _fetch_mcp_tools()
 
     # ── Agentic loop: run tool calls until the model stops requesting them ──
     while True:
@@ -318,7 +313,7 @@ def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = 
             model="claude-opus-4-6",
             max_tokens=2048,
             system=system,
-            tools=TOOLS,
+            tools=available_tools,
             messages=current_messages,
         )
 

@@ -27,12 +27,14 @@ from mcp.server.fastmcp import FastMCP
 # ---------------------------------------------------------------------------
 
 DB_PATH: str = os.getenv("DB_PATH", "/data/ledger.db")
+_MCP_HOST: str = os.getenv("FASTMCP_HOST", "127.0.0.1")
+_MCP_PORT: int = int(os.getenv("FASTMCP_PORT", "8000"))
 
 # ---------------------------------------------------------------------------
 # MCP server instance
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP("Stock Ledger")
+mcp = FastMCP("Stock Ledger", host=_MCP_HOST, port=_MCP_PORT)
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -508,6 +510,149 @@ def get_rebalance_check(as_of: str | None = None) -> dict[str, Any]:
         return {"error": str(exc), "tool": "get_rebalance_check"}
 
 
+@mcp.tool()
+def get_lots(
+    symbol: str,
+    method: str = "fifo",
+) -> dict[str, Any]:
+    """Return lot-level position detail for a symbol using the specified cost method.
+
+    Args:
+        symbol: Ticker symbol (case-insensitive).
+        method: Cost method — "fifo", "lifo", or "avg" (default "fifo").
+
+    Returns:
+        Lot detail dict as returned by the ledger's lots_by_method.
+    """
+    try:
+        if method not in ("fifo", "lifo", "avg"):
+            return {
+                "error": f"Invalid method '{method}'. Must be 'fifo', 'lifo', or 'avg'.",
+                "tool": "get_lots",
+            }
+        ledger = _ledger()
+        return ledger.lots_by_method(symbol=symbol.upper(), method=method)
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_lots"}
+
+
+@mcp.tool()
+def get_price_alerts(symbol: str | None = None) -> dict[str, Any]:
+    """List active (non-triggered) price alerts.
+
+    Args:
+        symbol: Filter by ticker symbol. None returns alerts for all symbols.
+
+    Returns:
+        {"alerts": [...], "count": int}
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS price_alerts (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol      TEXT    NOT NULL,
+                    alert_type  TEXT    NOT NULL,
+                    price       REAL    NOT NULL,
+                    note        TEXT    DEFAULT '',
+                    created_at  TEXT    NOT NULL DEFAULT (date('now')),
+                    triggered   INTEGER NOT NULL DEFAULT 0,
+                    triggered_at TEXT
+                )
+            """)
+            con.row_factory = sqlite3.Row
+            if symbol:
+                rows = con.execute(
+                    "SELECT * FROM price_alerts WHERE triggered=0 AND symbol=? ORDER BY id",
+                    (symbol.upper(),),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT * FROM price_alerts WHERE triggered=0 ORDER BY id"
+                ).fetchall()
+        alerts = [dict(r) for r in rows]
+        return {"alerts": alerts, "count": len(alerts)}
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_price_alerts"}
+
+
+@mcp.tool()
+def add_price_alert(
+    symbol: str,
+    alert_type: str,
+    price: float,
+    note: str = "",
+) -> dict[str, Any]:
+    """Create a stop-loss or target-price alert.
+
+    Args:
+        symbol:     Ticker symbol (case-insensitive; stored as uppercase).
+        alert_type: "stop_loss" (triggers when price drops to or below target)
+                    or "target" (triggers when price rises to or above target).
+        price:      Alert trigger price.
+        note:       Optional free-text annotation.
+
+    Returns:
+        Confirmation dict with the new alert's id and details.
+    """
+    try:
+        if alert_type not in ("stop_loss", "target"):
+            return {
+                "error": "alert_type must be 'stop_loss' or 'target'.",
+                "tool": "add_price_alert",
+            }
+        with sqlite3.connect(DB_PATH) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS price_alerts (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol      TEXT    NOT NULL,
+                    alert_type  TEXT    NOT NULL,
+                    price       REAL    NOT NULL,
+                    note        TEXT    DEFAULT '',
+                    created_at  TEXT    NOT NULL DEFAULT (date('now')),
+                    triggered   INTEGER NOT NULL DEFAULT 0,
+                    triggered_at TEXT
+                )
+            """)
+            cur = con.execute(
+                "INSERT INTO price_alerts (symbol, alert_type, price, note) VALUES (?,?,?,?)",
+                (symbol.upper(), alert_type, price, note),
+            )
+            new_id = cur.lastrowid
+        return {
+            "status": "created",
+            "id": new_id,
+            "symbol": symbol.upper(),
+            "alert_type": alert_type,
+            "price": price,
+            "note": note,
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "add_price_alert"}
+
+
+@mcp.tool()
+def delete_price_alert(alert_id: int) -> dict[str, Any]:
+    """Delete a price alert by its id.
+
+    Args:
+        alert_id: The integer id of the alert to delete.
+
+    Returns:
+        {"deleted": alert_id} on success, or an error dict if not found.
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            affected = con.execute(
+                "DELETE FROM price_alerts WHERE id=?", (alert_id,)
+            ).rowcount
+        if affected == 0:
+            return {"error": f"Alert {alert_id} not found.", "tool": "delete_price_alert"}
+        return {"deleted": alert_id}
+    except Exception as exc:
+        return {"error": str(exc), "tool": "delete_price_alert"}
+
+
 # ===========================================================================
 # WRITE TOOLS
 # ===========================================================================
@@ -621,9 +766,7 @@ def add_cash(
 
 if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")
-    if transport == "sse":
-        host = os.getenv("MCP_HOST", "0.0.0.0")
-        port = int(os.getenv("MCP_PORT", "8001"))
-        mcp.run(transport="sse", host=host, port=port)
+    if transport in ("sse", "streamable-http"):
+        mcp.run(transport=transport)
     else:
         mcp.run(transport="stdio")

@@ -15,6 +15,7 @@ services:
       FINMIND_TOKEN: ""
       TZ: Asia/Taipei
       AUTO_REFRESH_QUOTES_ON_TRADE: "1"
+      MCP_URL: "http://mcp:8001/mcp"
     volumes:
       - ledger_data:/data
     restart: unless-stopped
@@ -42,9 +43,9 @@ services:
     environment:
       DB_PATH: /data/ledger.db
       TZ: Asia/Taipei
-      MCP_TRANSPORT: sse
-      MCP_HOST: "0.0.0.0"
-      MCP_PORT: "8001"
+      MCP_TRANSPORT: streamable-http
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8001"
     volumes:
       - ledger_data:/data
     depends_on:
