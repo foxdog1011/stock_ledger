@@ -9,6 +9,8 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ![Claude](https://img.shields.io/badge/Claude-claude--opus--4--6-orange)
 ![Tests](https://img.shields.io/badge/tests-336-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-compose-blue)
+![AWS ECS](https://img.shields.io/badge/AWS-ECS%20Fargate-orange)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)
 
 ---
 
@@ -440,6 +442,69 @@ stock_ledger/
 | Frontend | Next.js 14, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui |
 | Testing | Python `unittest` (336 tests, 13 files) |
 | Container | Docker, Docker Compose |
+
+---
+
+## MCP Server (Model Context Protocol)
+
+Stock Ledger exposes a fully-typed MCP server so any MCP-compatible AI client (Claude Desktop, custom agents) can query and manage the portfolio directly via tool calls — no REST API knowledge needed.
+
+### Setup (Claude Desktop)
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "stock-ledger": {
+      "command": "python",
+      "args": ["/path/to/stock_ledger/apps/mcp/server.py"],
+      "env": {
+        "DB_PATH": "/path/to/stock_ledger/data/ledger.db"
+      }
+    }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|---|---|
+| `get_portfolio_snapshot` | High-level snapshot: total equity, cash, market value, position count |
+| `get_positions` | All positions with cost basis, unrealized/realized P&L, last price |
+| `get_cash_balance` | Current or point-in-time cash balance |
+| `get_recent_trades` | Recent trade history with symbol, qty, price, date |
+| `get_cash_transactions` | Cash ledger entries: deposits, withdrawals, dividends |
+| `get_perf_summary` | Portfolio performance over a date range: return, Sharpe, drawdown |
+| `get_risk_metrics` | Risk metrics: VaR, volatility, beta, concentration |
+| `detect_anomalies` | PCA + rolling Z-score anomaly detection for any symbol |
+| `get_catalyst_events` | Upcoming earnings, dividends, and conference events |
+| `get_universe_companies` | All companies in the investment universe |
+| `get_watchlists` | All watchlists and their constituent symbols |
+| `get_rebalance_check` | Check if rebalancing is needed based on concentration limits |
+| `get_lots` | Lot-level position detail (FIFO / LIFO / HIFO cost methods) |
+| `get_price_alerts` | List active stop-loss and target-price alerts |
+| `add_price_alert` | Create a new price alert for a symbol |
+| `delete_price_alert` | Remove a price alert by ID |
+| `add_trade` | Record a new buy/sell trade |
+| `add_cash` | Record a cash deposit or withdrawal |
+
+### Example Prompts (via Claude Desktop)
+
+```
+"What's my portfolio worth today?"
+→ calls get_portfolio_snapshot
+
+"Show me all losing positions"
+→ calls get_positions, filters unrealized_pnl < 0
+
+"Detect any anomalies in 2330 this week"
+→ calls detect_anomalies(symbol="2330", lookback_days=7)
+
+"Am I overweight in any single stock?"
+→ calls get_rebalance_check
+```
 
 ---
 

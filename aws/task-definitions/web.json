@@ -1,0 +1,45 @@
+{
+  "family": "stock-ledger-web",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "PLACEHOLDER",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV",               "value": "production" },
+        { "name": "NEXT_TELEMETRY_DISABLED","value": "1" },
+        { "name": "PORT",                   "value": "3000" },
+        { "name": "HOSTNAME",               "value": "0.0.0.0" },
+        { "name": "DOCKER",                 "value": "1" },
+        { "name": "API_URL",                "value": "http://api.stock-ledger.local:8000" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/stock-ledger-web",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      }
+    }
+  ]
+}

@@ -20,12 +20,12 @@ async function handler(req: NextRequest, ctx: { params: { path: string[] } }) {
     cache: "no-store",
   });
 
-  const buf = await upstream.arrayBuffer();
   const outHeaders = new Headers(upstream.headers);
   outHeaders.delete("content-encoding");
   outHeaders.delete("content-length");
 
-  return new Response(buf, { status: upstream.status, headers: outHeaders });
+  // Stream SSE responses directly instead of buffering (fixes JARVIS streaming)
+  return new Response(upstream.body, { status: upstream.status, headers: outHeaders });
 }
 
 export const GET = handler;

@@ -1,0 +1,54 @@
+{
+  "family": "stock-ledger-mcp",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/stock-ledger-task-role",
+  "containerDefinitions": [
+    {
+      "name": "mcp",
+      "image": "PLACEHOLDER",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "DB_PATH",          "value": "/data/ledger.db" },
+        { "name": "TZ",               "value": "Asia/Taipei" },
+        { "name": "MCP_TRANSPORT",    "value": "streamable-http" },
+        { "name": "FASTMCP_HOST",     "value": "0.0.0.0" },
+        { "name": "FASTMCP_PORT",     "value": "8001" },
+        { "name": "PYTHONUNBUFFERED", "value": "1" }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "ledger-data",
+          "containerPath": "/data"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/stock-ledger-mcp",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "ledger-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "EFS_FILESYSTEM_ID",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}
