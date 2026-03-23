@@ -38,3 +38,10 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 .claude/
+
+# Terraform
+aws/terraform/.terraform/
+aws/terraform/*.tfstate
+aws/terraform/*.tfstate.backup
+aws/terraform/.terraform.lock.hcl
+aws/terraform/terraform.tfvars
