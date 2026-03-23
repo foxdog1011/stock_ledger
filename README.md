@@ -9,8 +9,15 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ![Claude](https://img.shields.io/badge/Claude-claude--opus--4--6-orange)
 ![Tests](https://img.shields.io/badge/tests-336-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-compose-blue)
-![AWS ECS](https://img.shields.io/badge/AWS-ECS%20Fargate-orange)
+![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t2.micro-orange)
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)
+![Terraform](https://img.shields.io/badge/IaC-Terraform-purple)
+
+---
+
+## Live Demo
+
+**http://35.76.187.226** — deployed on AWS EC2 (Tokyo region), auto-deployed via GitHub Actions CI/CD.
 
 ---
 
@@ -431,6 +438,52 @@ stock_ledger/
 
 ---
 
+## CI/CD Pipeline
+
+Every `git push origin main` triggers the full automation:
+
+```
+git push
+  └── GitHub Actions CI
+        ├── pytest          (336 unit tests + smoke test)
+        ├── ESLint          (TypeScript/React lint)
+        └── tsc --noEmit    (TypeScript type check)
+              ↓ all pass
+        GitHub Actions CD
+          ├── docker build × 3  (api / mcp / web)
+          ├── docker push → AWS ECR  (tagged :$SHA + :latest)
+          └── SSH → EC2
+                ├── docker compose pull
+                ├── docker compose up -d --remove-orphans
+                └── docker image prune -f
+```
+
+Zero-downtime rolling update on every push; no manual server access required after initial setup.
+
+---
+
+## AWS Infrastructure (Terraform)
+
+Provisioned with Terraform (`aws/terraform/`), all resources in `ap-northeast-1` (Tokyo):
+
+| Resource | Detail |
+|---|---|
+| **EC2 t2.micro** | Amazon Linux 2023, Elastic IP `35.76.187.226` |
+| **ECR × 3** | `stock-ledger-api` / `mcp` / `web` — lifecycle policy keeps last 5 images |
+| **VPC + Subnet** | Single public subnet, Internet Gateway |
+| **Security Group** | Ports 80 / 443 / 22 |
+| **IAM Role** | EC2 instance profile with ECR pull + CloudWatch Logs permissions |
+| **CloudWatch** | Log group `/ec2/stock-ledger`, 14-day retention |
+| **Nginx** | Reverse proxy: `/api/*` → FastAPI :8000, `/*` → Next.js :3001 |
+
+```bash
+cd aws/terraform
+terraform init
+terraform apply   # provisions all resources in ~2 minutes
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -442,6 +495,8 @@ stock_ledger/
 | Frontend | Next.js 14, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui |
 | Testing | Python `unittest` (336 tests, 13 files) |
 | Container | Docker, Docker Compose |
+| Infrastructure | AWS EC2, ECR, VPC, IAM, CloudWatch — provisioned via Terraform |
+| CI/CD | GitHub Actions — pytest + ESLint + tsc → build ECR images → SSH deploy |
 
 ---
 
