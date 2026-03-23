@@ -15,12 +15,6 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ---
 
-## Live Demo
-
-**http://35.76.187.226** — deployed on AWS EC2 (Tokyo region), auto-deployed via GitHub Actions CI/CD.
-
----
-
 ## Highlights
 
 - **AI portfolio analyst (J.A.R.V.I.S.)** — Claude claude-opus-4-6 with 7 tool-use functions; agentic loop autonomously queries positions, risk metrics, P&L, and lot details before answering in natural language; SSE streaming renders token-by-token in a floating HUD panel
@@ -468,7 +462,7 @@ Provisioned with Terraform (`aws/terraform/`), all resources in `ap-northeast-1`
 
 | Resource | Detail |
 |---|---|
-| **EC2 t2.micro** | Amazon Linux 2023, Elastic IP `35.76.187.226` |
+| **EC2 t2.micro** | Amazon Linux 2023, Elastic IP (ap-northeast-1) |
 | **ECR × 3** | `stock-ledger-api` / `mcp` / `web` — lifecycle policy keeps last 5 images |
 | **VPC + Subnet** | Single public subnet, Internet Gateway |
 | **Security Group** | Ports 80 / 443 / 22 |
