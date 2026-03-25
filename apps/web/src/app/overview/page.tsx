@@ -395,7 +395,7 @@ export default function OverviewPage() {
           <h1 className="text-xl font-semibold">總覽</h1>
           {data && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              Generated {data.generatedAt.replace("T", " ")}
+              更新時間：{data.generatedAt.replace("T", " ").slice(0, 16)}
             </p>
           )}
         </div>
@@ -432,8 +432,7 @@ export default function OverviewPage() {
       {isError && (
         <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-md px-4 py-3">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-          載入失敗：{" "}
-          {error instanceof Error ? error.message : "Unknown error"}
+          資料載入失敗，請稍後再試。
         </div>
       )}
 

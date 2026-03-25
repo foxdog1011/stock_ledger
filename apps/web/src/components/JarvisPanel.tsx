@@ -410,9 +410,6 @@ export function JarvisPanel() {
                 : <SendHorizonal className="h-4 w-4" />}
             </button>
           </form>
-          <p className="text-[10px] text-zinc-700 text-center tracking-wide">
-            Ctrl+J · toggle &nbsp;·&nbsp; Esc · close
-          </p>
         </div>
       </div>
     </>

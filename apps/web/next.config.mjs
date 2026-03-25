@@ -20,8 +20,6 @@ const nextConfig = {
       ? (apiUrl || "http://api:8000")
       : "http://127.0.0.1:8000";
 
-    console.log(`[next.config] isDocker=${isDocker} API_URL=${apiUrl || "(unset)"} => proxy=${target}`);
-
     return [
       {
         source: "/api/:path*",
