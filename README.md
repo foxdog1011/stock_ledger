@@ -19,15 +19,17 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 **http://35.76.187.226**
 
-> Read-only demo mode — all write operations are blocked. Data is a simulated sample portfolio and does not represent real holdings.
+> Data is a simulated sample portfolio and does not represent real holdings.
 >
-> Seed sample data: `POST /api/demo/seed` (resets to 5 US positions + 13 months of history)
+> Seed / reset sample data: `POST /api/demo/seed` (5 US positions + 13 months of history)
+>
+> To run in read-only mode: set `DEMO_MODE=1` in `.env` to block all write operations.
 
 ---
 
 ## Highlights
 
-- **AI portfolio analyst (J.A.R.V.I.S.)** — Claude claude-opus-4-6 with 7 tool-use functions; agentic loop autonomously queries positions, risk metrics, P&L, and lot details before answering in natural language; SSE streaming renders token-by-token in a floating HUD panel
+- **AI portfolio analyst (J.A.R.V.I.S.)** — Claude claude-opus-4-6 with 9 tool-use functions (7 read + 2 write); agentic loop autonomously queries positions, risk metrics, P&L, and lot details before answering in natural language; can record trades and cash entries; SSE streaming renders token-by-token in a floating HUD panel
 - **Market anomaly detection** — PCA-based linear autoencoder on 6-feature multivariate time-series (price, volume, volatility, Z-score, Bollinger Band %B); data-driven threshold (μ + 2.5σ reconstruction error) replaces fixed contamination ratios; batch-scans all active positions simultaneously; analogous to multivariate SPC in manufacturing
 - **End-to-end ownership** — pure-Python core library → 40+ REST endpoints → TypeScript frontend, zero third-party portfolio SDK
 - **Domain-Driven Design** — separate `domain/` layer decouples business logic (risk, execution, overview) from API routing and persistence
@@ -43,7 +45,7 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│  Next.js 14  ·  TypeScript  ·  TanStack Query v5  ·  shadcn   │
+│  Next.js 15  ·  TypeScript  ·  TanStack Query v5  ·  shadcn   │
 │  /overview /portfolio /positions /lots /universe /catalyst     │
 │  /digest /offsetting /anomaly /alerts /settings  …            │
 │  /anomaly /alerts /allocation /chip /revenue /rolling         │
@@ -426,7 +428,7 @@ stock_ledger/
 │   │   ├── config.py          #   Environment config
 │   │   ├── deps.py            #   FastAPI dependencies
 │   │   └── main.py            #   App factory + APScheduler lifespan
-│   └── web/                   # Next.js 14 frontend
+│   └── web/                   # Next.js 15 frontend
 │       └── src/
 │           ├── app/           #   20 page routes
 │           ├── components/
@@ -496,7 +498,7 @@ terraform apply   # provisions all resources in ~2 minutes
 | Anomaly Detection | scikit-learn PCA (linear autoencoder), Z-score (rolling window) |
 | Core library | Python 3.11, SQLite (stdlib only) |
 | Backend | FastAPI, Uvicorn, Pandas, APScheduler, yfinance |
-| Frontend | Next.js 14, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui |
+| Frontend | Next.js 15, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui |
 | Testing | Python `unittest` (336 tests, 13 files) |
 | Container | Docker, Docker Compose |
 | Infrastructure | AWS EC2, ECR, VPC, IAM, CloudWatch — provisioned via Terraform |
