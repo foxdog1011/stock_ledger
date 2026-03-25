@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState } from "react";
 import Link from "next/link";
 import { RefreshCw, AlertTriangle, CheckCircle2, XCircle, RotateCcw, PieChart } from "lucide-react";
@@ -64,13 +66,18 @@ function PortfolioSection({ data }: { data: ReturnType<typeof useOverview>["data
     { label: "持倉數量",  value: String(p.positionCount),    cls: "" },
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {rows.map(({ label, value, cls }) => (
-        <div key={label} className="rounded-lg border bg-card p-3">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className={`text-sm font-semibold mt-0.5 ${cls}`}>{value}</p>
-        </div>
-      ))}
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {rows.map(({ label, value, cls }) => (
+          <div key={label} className="rounded-lg border bg-card p-3">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className={`text-sm font-semibold mt-0.5 ${cls}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        ※ 組合含台股（TWD）與美股（USD）混合幣別，數字未做匯率換算。
+      </p>
     </div>
   );
 }
@@ -82,6 +89,9 @@ function RiskSection({ data }: { data: ReturnType<typeof useOverview>["data"] })
   const r = data.risk;
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        「風險中」= 持倉尚未透過已實現獲利回收成本；「已無風險」= 已實現獲利 ≥ 淨投入成本。
+      </p>
       <div className="flex flex-wrap gap-3">
         <div className="rounded-lg border bg-card p-3 min-w-[120px]">
           <p className="text-xs text-muted-foreground">風險中</p>

@@ -1,30 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, DollarSign, ArrowLeftRight, BarChart3, Zap } from "lucide-react";
-import { toast } from "sonner";
+import { Plus, DollarSign, ArrowLeftRight, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AddCashDialog } from "@/components/forms/add-cash-dialog";
 import { AddTradeDialog } from "@/components/forms/add-trade-dialog";
 import { AddQuoteDialog } from "@/components/forms/add-quote-dialog";
-import { useSeedDemo } from "@/hooks/use-queries";
 
 export function Fab() {
   const [expanded, setExpanded] = useState(false);
-  const seedDemo = useSeedDemo();
-
-  const handleSeed = async () => {
-    if (!window.confirm("This will DELETE all existing data and load a demo portfolio. Continue?")) {
-      return;
-    }
-    try {
-      await seedDemo.mutateAsync();
-      toast.success("Demo portfolio loaded — 5 positions, 13 months of price history");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Seed failed");
-    }
-  };
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col-reverse items-end gap-3">
@@ -33,7 +18,7 @@ export function Fab() {
         size="icon"
         className="h-14 w-14 rounded-full shadow-xl"
         onClick={() => setExpanded((v) => !v)}
-        aria-label={expanded ? "Close quick actions" : "Open quick actions"}
+        aria-label={expanded ? "關閉快速操作" : "開啟快速操作"}
       >
         <Plus
           className={cn(
@@ -53,22 +38,16 @@ export function Fab() {
         )}
       >
         <AddCashDialog>
-          <SpeedDialItem icon={<DollarSign className="h-4 w-4" />} label="Add Cash" />
+          <SpeedDialItem icon={<DollarSign className="h-4 w-4" />} label="新增現金" />
         </AddCashDialog>
 
         <AddTradeDialog>
-          <SpeedDialItem icon={<ArrowLeftRight className="h-4 w-4" />} label="Add Trade" />
+          <SpeedDialItem icon={<ArrowLeftRight className="h-4 w-4" />} label="新增交易" />
         </AddTradeDialog>
 
         <AddQuoteDialog>
-          <SpeedDialItem icon={<BarChart3 className="h-4 w-4" />} label="Add Quote" />
+          <SpeedDialItem icon={<BarChart3 className="h-4 w-4" />} label="新增報價" />
         </AddQuoteDialog>
-
-        <SpeedDialItem
-          icon={<Zap className="h-4 w-4 text-amber-500" />}
-          label="Seed Demo"
-          onClick={handleSeed}
-        />
       </div>
     </div>
   );
