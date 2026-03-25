@@ -299,57 +299,61 @@ def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = 
         yield _sse_event({"type": "error", "text": "ANTHROPIC_API_KEY is not configured on the server."})
         return
 
-    client = Anthropic(api_key=api_key)
-    system = SYSTEM_PROMPT.format(
-        today=date.today().isoformat(),
-        page_label=page_context or "unknown page",
-    )
-    current_messages = list(messages)
-    available_tools = _fetch_mcp_tools()
+    try:
+        client = Anthropic(api_key=api_key)
+        system = SYSTEM_PROMPT.format(
+            today=date.today().isoformat(),
+            page_label=page_context or "unknown page",
+        )
+        current_messages = list(messages)
+        available_tools = _fetch_mcp_tools()
 
-    # ── Agentic loop: run tool calls until the model stops requesting them ──
-    while True:
-        response = client.messages.create(
+        # ── Agentic loop: run tool calls until the model stops requesting them ──
+        while True:
+            response = client.messages.create(
+                model="claude-opus-4-6",
+                max_tokens=2048,
+                system=system,
+                tools=available_tools,
+                messages=current_messages,
+            )
+
+            if response.stop_reason != "tool_use":
+                break
+
+            current_messages.append({"role": "assistant", "content": response.content})
+            tool_results = []
+
+            for block in response.content:
+                if block.type != "tool_use":
+                    continue
+                yield _sse_event({"type": "tool_call", "name": block.name})
+                try:
+                    result = _run_tool(block.name, block.input, ledger)
+                except Exception as exc:
+                    result = {"error": str(exc)}
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": json.dumps(result, default=str),
+                })
+
+            current_messages.append({"role": "user", "content": tool_results})
+
+        # ── Stream the final text response ──
+        with client.messages.stream(
             model="claude-opus-4-6",
             max_tokens=2048,
             system=system,
-            tools=available_tools,
             messages=current_messages,
-        )
+        ) as stream:
+            for text in stream.text_stream:
+                yield _sse_event({"type": "text", "text": text})
 
-        if response.stop_reason != "tool_use":
-            break
+        yield _sse_event({"type": "done"})
 
-        current_messages.append({"role": "assistant", "content": response.content})
-        tool_results = []
-
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            yield _sse_event({"type": "tool_call", "name": block.name})
-            try:
-                result = _run_tool(block.name, block.input, ledger)
-            except Exception as exc:
-                result = {"error": str(exc)}
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": json.dumps(result, default=str),
-            })
-
-        current_messages.append({"role": "user", "content": tool_results})
-
-    # ── Stream the final text response ──
-    with client.messages.stream(
-        model="claude-opus-4-6",
-        max_tokens=2048,
-        system=system,
-        messages=current_messages,
-    ) as stream:
-        for text in stream.text_stream:
-            yield _sse_event({"type": "text", "text": text})
-
-    yield _sse_event({"type": "done"})
+    except Exception as exc:
+        yield _sse_event({"type": "error", "text": f"J.A.R.V.I.S. error: {exc}"})
 
 
 # ── Request / endpoint ─────────────────────────────────────────────────────────
