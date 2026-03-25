@@ -21,7 +21,6 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ![Portfolio](screenshots/portfolio.png)
 ![Anomaly Detection](screenshots/anomaly.png)
 ![AI Chat (J.A.R.V.I.S.)](screenshots/chat.png)
-![Overview](screenshots/overview.png)
 
 ---
 
