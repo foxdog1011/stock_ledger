@@ -4,14 +4,24 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green)
-![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Claude](https://img.shields.io/badge/Claude-claude--opus--4--6-orange)
 ![Tests](https://img.shields.io/badge/tests-336-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-compose-blue)
-![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t2.micro-orange)
+![AWS EC2](https://img.shields.io/badge/AWS-EC2%20ap--northeast--1-orange)
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)
 ![Terraform](https://img.shields.io/badge/IaC-Terraform-purple)
+
+---
+
+## Live Demo
+
+**http://35.76.187.226**
+
+> Read-only demo mode — all write operations are blocked. Data is a simulated sample portfolio and does not represent real holdings.
+>
+> Seed sample data: `POST /api/demo/seed` (resets to 5 US positions + 13 months of history)
 
 ---
 
@@ -157,7 +167,7 @@ docker compose up -d
 
 Data persists in the named Docker volume `ledger_data` — rebuilding images does **not** lose data.
 
-Seed realistic demo data (5 positions, 13 months of history) from the dashboard FAB or:
+Seed realistic demo data (5 positions, 13 months of history):
 
 ```bash
 curl -X POST http://localhost:8000/api/demo/seed
@@ -568,3 +578,4 @@ Add to your `claude_desktop_config.json`:
 | `FINMIND_TOKEN` | API | _(empty)_ | Required only for FinMind provider |
 | `AUTO_REFRESH_QUOTES_ON_TRADE` | API | `1` | Set to `0` to disable background refresh on trade |
 | `TZ` | API | `Asia/Taipei` | Scheduler timezone |
+| `DEMO_MODE` | API | `0` | Set to `1` to block all write operations (read-only public demo) |
