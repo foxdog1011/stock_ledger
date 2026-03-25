@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,8 +13,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import deps
 from .tz import TZ
@@ -226,6 +232,28 @@ async def lifespan(app: FastAPI):
     _scheduler.shutdown(wait=False)
 
 
+DEMO_MODE = os.getenv("DEMO_MODE", "0") == "1"
+
+# Endpoints allowed to write even in DEMO_MODE (seed is useful for demos)
+_DEMO_WRITE_ALLOWLIST: set[str] = {"/api/demo/seed"}
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+class DemoReadOnlyMiddleware(BaseHTTPMiddleware):
+    """Block all mutating requests when DEMO_MODE=1."""
+
+    async def dispatch(self, request: Request, call_next):
+        if DEMO_MODE and request.method in _WRITE_METHODS:
+            if request.url.path not in _DEMO_WRITE_ALLOWLIST:
+                return JSONResponse(
+                    {"detail": "Demo 模式：僅開放讀取，不允許修改資料。"},
+                    status_code=403,
+                )
+        return await call_next(request)
+
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
+
 app = FastAPI(
     title="Stock Ledger API",
     version="1.0.0",
@@ -235,6 +263,13 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+if DEMO_MODE:
+    app.add_middleware(DemoReadOnlyMiddleware)
+    logger.info("DEMO_MODE enabled — write operations are blocked")
 
 app.add_middleware(
     CORSMiddleware,
