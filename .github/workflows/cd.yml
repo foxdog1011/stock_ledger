@@ -95,6 +95,8 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: ECR_REGISTRY,IMAGE_TAG,AWS_REGION
+          command_timeout: 30m
+
           script: |
             # Login to ECR
             aws ecr get-login-password --region $AWS_REGION | \
