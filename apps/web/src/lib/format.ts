@@ -30,7 +30,7 @@ export function fmtDate(dateStr: string | null | undefined): string {
 
 export function pnlClass(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return "text-muted-foreground";
-  return value > 0 ? "text-emerald-600" : "text-red-500";
+  return value > 0 ? "text-tv-up" : "text-tv-down";
 }
 
 // Keep old exports for any existing usage

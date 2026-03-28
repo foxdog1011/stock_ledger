@@ -55,6 +55,49 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_trade_date ON trades(date);
         CREATE INDEX IF NOT EXISTS idx_trade_sym  ON trades(symbol, date);
         CREATE INDEX IF NOT EXISTS idx_price_sym  ON prices(symbol, date);
+
+        CREATE TABLE IF NOT EXISTS research_companies (
+            ticker       TEXT PRIMARY KEY,
+            name         TEXT NOT NULL,
+            sector       TEXT,
+            industry     TEXT,
+            market_cap   REAL,
+            ev           REAL,
+            description  TEXT,
+            raw_markdown TEXT,
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS research_supply_chain (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker      TEXT NOT NULL,
+            direction   TEXT NOT NULL CHECK(direction IN ('upstream','downstream')),
+            entity      TEXT NOT NULL,
+            role_note   TEXT,
+            FOREIGN KEY (ticker) REFERENCES research_companies(ticker)
+        );
+
+        CREATE TABLE IF NOT EXISTS research_customers (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker       TEXT NOT NULL,
+            counterpart  TEXT NOT NULL,
+            is_customer  INTEGER NOT NULL DEFAULT 1,
+            note         TEXT,
+            FOREIGN KEY (ticker) REFERENCES research_companies(ticker)
+        );
+
+        CREATE TABLE IF NOT EXISTS research_themes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker     TEXT NOT NULL,
+            theme      TEXT NOT NULL,
+            UNIQUE(ticker, theme),
+            FOREIGN KEY (ticker) REFERENCES research_companies(ticker)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_research_industry ON research_companies(industry);
+        CREATE INDEX IF NOT EXISTS idx_supply_chain_ticker ON research_supply_chain(ticker);
+        CREATE INDEX IF NOT EXISTS idx_themes_theme ON research_themes(theme);
+        CREATE INDEX IF NOT EXISTS idx_themes_ticker ON research_themes(ticker);
     """)
     conn.commit()
 

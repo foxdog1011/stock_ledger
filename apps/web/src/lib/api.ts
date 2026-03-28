@@ -346,6 +346,14 @@ export const urls = {
     ae_threshold: p?.aeThreshold != null ? String(p.aeThreshold) : undefined,
     as_of: p?.asOf,
   })}`),
+
+  // Research (My-TW-Coverage)
+  researchCompany:    (ticker: string) => url(`/api/research/${ticker}`),
+  researchSupplyChain: (ticker: string) => url(`/api/research/supply-chain/${ticker}`),
+  researchThemes:     () => url("/api/research/themes"),
+  researchTheme:      (theme: string) => url(`/api/research/theme/${encodeURIComponent(theme)}`),
+  researchSearch:     (q: string, limit?: number) =>
+    url(`/api/research/search${qs({ q, limit: limit != null ? String(limit) : undefined })}`),
 } as const;
 
 // ── Multipart upload helper ───────────────────────────────────────────────────
@@ -1213,5 +1221,89 @@ export function mapSectorCheck(raw: Raw): SectorCheck {
       pctOfPortfolio: pick(s, "pct_of_portfolio", "pctOfPortfolio", 0) as number,
     })),
     unknownSymbols: (pick(raw, "unknown_symbols", "unknownSymbols", []) as string[]),
+  };
+}
+
+
+// ── Research mappers ──────────────────────────────────────────────────────────
+
+import type {
+  ResearchCompany, ResearchThemesResponse, ResearchThemeResponse,
+  ResearchSearchResponse, ResearchSupplyChainResponse,
+} from "@/lib/types";
+
+export function mapResearchCompany(raw: Raw): ResearchCompany {
+  return {
+    ticker:               raw.ticker as string,
+    name:                 raw.name as string,
+    sector:               (raw.sector as string | null) ?? null,
+    industry:             (raw.industry as string | null) ?? null,
+    marketCapMillionTwd:  (raw.market_cap as number | null) ?? null,
+    evMillionTwd:         (raw.ev as number | null) ?? null,
+    description:          (raw.description as string | null) ?? null,
+    supplyChain: ((raw.supply_chain ?? []) as Raw[]).map((s) => ({
+      direction: s.direction as "upstream" | "downstream",
+      entity:    s.entity as string,
+      roleNote:  (s.role_note as string | null) ?? null,
+    })),
+    customers: ((raw.customers ?? []) as Raw[]).map((c) => ({
+      counterpart: c.counterpart as string,
+      isCustomer:  Boolean(c.is_customer),
+      note:        (c.note as string | null) ?? null,
+    })),
+    themes: (raw.themes ?? []) as string[],
+  };
+}
+
+export function mapResearchThemes(raw: Raw): ResearchThemesResponse {
+  return {
+    total:  raw.total as number,
+    themes: ((raw.themes ?? []) as Raw[]).map((t) => ({
+      themeName:    t.theme_name as string,
+      companyCount: t.company_count as number,
+    })),
+  };
+}
+
+export function mapResearchTheme(raw: Raw): ResearchThemeResponse {
+  return {
+    themeName: raw.theme_name as string,
+    total:     raw.total as number,
+    companies: ((raw.companies ?? []) as Raw[]).map((c) => ({
+      ticker:   c.ticker as string,
+      name:     c.name as string,
+      industry: (c.industry as string | null) ?? null,
+    })),
+  };
+}
+
+export function mapResearchSearch(raw: Raw): ResearchSearchResponse {
+  return {
+    total:   raw.total as number,
+    results: ((raw.results ?? []) as Raw[]).map((r) => ({
+      ticker:             r.ticker as string,
+      name:               r.name as string,
+      industry:           (r.industry as string | null) ?? null,
+      descriptionSnippet: (r.description_snippet as string) ?? "",
+    })),
+  };
+}
+
+export function mapResearchSupplyChain(raw: Raw): ResearchSupplyChainResponse {
+  return {
+    ticker:     raw.ticker as string,
+    upstream:   ((raw.upstream ?? []) as Raw[]).map((e) => ({
+      entity:   e.entity as string,
+      roleNote: (e.role_note as string | null) ?? null,
+    })),
+    downstream: ((raw.downstream ?? []) as Raw[]).map((e) => ({
+      entity:   e.entity as string,
+      roleNote: (e.role_note as string | null) ?? null,
+    })),
+    relatedCompanies: ((raw.related_companies ?? []) as Raw[]).map((c) => ({
+      ticker:   c.ticker as string,
+      name:     c.name as string,
+      industry: (c.industry as string | null) ?? null,
+    })),
   };
 }

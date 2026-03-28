@@ -10,9 +10,10 @@ const primaryLinks = [
   { href: "/overview",    label: "總覽" },
   { href: "/portfolio",   label: "投資組合" },
   { href: "/rolling",     label: "滾動分析" },
-  { href: "/alerts",      label: "價格警示" },
+  { href: "/alerts",      label: "警示" },
   { href: "/chip",        label: "籌碼" },
   { href: "/positions",   label: "持倉" },
+  { href: "/research",    label: "研究" },
   { href: "/chat",        label: "J.A.R.V.I.S." },
 ] as const;
 
@@ -41,7 +42,6 @@ export function Nav() {
 
   const anySecondaryActive = secondaryLinks.some((l) => isActive(l.href));
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
@@ -53,56 +53,77 @@ export function Nav() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-14 items-center gap-6">
-        <Link href="/overview" className="flex-shrink-0 flex items-center gap-2 font-semibold">
-          <TrendingUp className="h-5 w-5 text-primary" />
-          <span className="hidden sm:inline">Stock Ledger</span>
+    <header className="sticky top-0 z-30 border-b border-border/60 bg-background/90 backdrop-blur-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-12 items-center gap-4">
+        {/* Logo */}
+        <Link
+          href="/overview"
+          className="flex-shrink-0 flex items-center gap-1.5 group"
+        >
+          <div className="p-1 rounded bg-primary/10 group-hover:bg-primary/20 transition-colors duration-150">
+            <TrendingUp className="h-4 w-4 text-tv-blue" />
+          </div>
+          <span className="hidden sm:inline text-sm font-semibold tracking-tight">
+            Stock Ledger
+          </span>
         </Link>
-        <nav className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
+
+        {/* Divider */}
+        <div className="h-5 w-px bg-border hidden sm:block" />
+
+        {/* Primary nav */}
+        <nav className="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0 scrollbar-none">
           {primaryLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
               className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
+                "relative px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 whitespace-nowrap",
                 isActive(href)
-                  ? "bg-secondary text-secondary-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                  ? "text-foreground bg-secondary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
               )}
             >
               {label}
+              {isActive(href) && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-0.5 bg-tv-blue rounded-full" />
+              )}
             </Link>
           ))}
         </nav>
 
-        {/* More dropdown — outside overflow-x-auto nav to avoid clipping */}
+        {/* More dropdown */}
         <div className="relative flex-shrink-0" ref={moreRef}>
           <button
             onClick={() => setMoreOpen((v) => !v)}
             className={cn(
-              "flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
+              "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 whitespace-nowrap",
               anySecondaryActive || moreOpen
-                ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                ? "text-foreground bg-secondary"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
             )}
           >
             更多
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", moreOpen && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                "h-3 w-3 transition-transform duration-200",
+                moreOpen && "rotate-180",
+              )}
+            />
           </button>
 
           {moreOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 rounded-md border bg-background shadow-md z-50 py-1">
+            <div className="absolute right-0 top-full mt-1.5 w-44 rounded-lg border border-border/80 bg-popover shadow-xl shadow-black/40 z-50 py-1 animate-scale-in">
               {secondaryLinks.map(({ href, label }) => (
                 <Link
                   key={href}
                   href={href}
                   onClick={() => setMoreOpen(false)}
                   className={cn(
-                    "block px-4 py-2 text-sm transition-colors",
+                    "flex items-center px-3 py-2 text-xs transition-colors duration-100",
                     isActive(href)
-                      ? "bg-secondary text-secondary-foreground font-medium"
-                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                      ? "text-foreground bg-secondary font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                   )}
                 >
                   {label}

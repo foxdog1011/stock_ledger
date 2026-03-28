@@ -851,7 +851,13 @@ export function useDeleteRollingLog() {
 }
 
 // ── Chart / Technical Indicators ──────────────────────────────────────────────
-import type { ChartData, RevenueData, AllocationData, ScreenerResponse, AnomalyResult, AnomalyBatchResult } from "@/lib/types";
+import type {
+  ChartData, RevenueData, AllocationData, ScreenerResponse, AnomalyResult, AnomalyBatchResult,
+  ResearchCompany, ResearchThemesResponse, ResearchThemeResponse, ResearchSearchResponse, ResearchSupplyChainResponse,
+} from "@/lib/types";
+import {
+  mapResearchCompany, mapResearchThemes, mapResearchTheme, mapResearchSearch, mapResearchSupplyChain,
+} from "@/lib/api";
 
 export function useChart(symbol: string | null, days = 120) {
   return useQuery({
@@ -933,5 +939,51 @@ export function useAnomalyBatch(p?: { days?: number }) {
     queryKey: ["anomalyBatch", p],
     queryFn: () => fetcher(urls.anomalyBatch(p)) as Promise<AnomalyBatchResult>,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// ── Research hooks ────────────────────────────────────────────────────────────
+
+export function useResearchCompany(ticker: string | null) {
+  return useQuery({
+    queryKey: ["research", "company", ticker],
+    queryFn: () => fetcher(urls.researchCompany(ticker!)).then(mapResearchCompany) as Promise<ResearchCompany>,
+    enabled: !!ticker,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useResearchSupplyChain(ticker: string | null) {
+  return useQuery({
+    queryKey: ["research", "supplyChain", ticker],
+    queryFn: () => fetcher(urls.researchSupplyChain(ticker!)).then(mapResearchSupplyChain) as Promise<ResearchSupplyChainResponse>,
+    enabled: !!ticker,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useResearchThemes() {
+  return useQuery({
+    queryKey: ["research", "themes"],
+    queryFn: () => fetcher(urls.researchThemes()).then(mapResearchThemes) as Promise<ResearchThemesResponse>,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+export function useResearchTheme(theme: string | null) {
+  return useQuery({
+    queryKey: ["research", "theme", theme],
+    queryFn: () => fetcher(urls.researchTheme(theme!)).then(mapResearchTheme) as Promise<ResearchThemeResponse>,
+    enabled: !!theme,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useResearchSearch(q: string, limit?: number) {
+  return useQuery({
+    queryKey: ["research", "search", q, limit],
+    queryFn: () => fetcher(urls.researchSearch(q, limit)).then(mapResearchSearch) as Promise<ResearchSearchResponse>,
+    enabled: q.length >= 2,
+    staleTime: 5 * 60 * 1000,
   });
 }

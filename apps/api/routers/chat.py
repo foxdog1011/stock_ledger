@@ -14,8 +14,11 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..config import DB_PATH as _CONFIG_DB_PATH
 from ..deps import get_ledger
 from ledger import StockLedger
+
+DB_PATH = str(_CONFIG_DB_PATH)
 
 router = APIRouter()
 
@@ -166,6 +169,53 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "get_company_research",
+        "description": (
+            "Get fundamental research profile for a Taiwan stock from the My-TW-Coverage database. "
+            "Returns company description, sector, industry, supply chain relationships, "
+            "customer/supplier links, and investment themes. Use when the user asks about "
+            "a company's business, background, or wants fundamental context."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "4-digit Taiwan stock ticker e.g. '2330'"},
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
+        "name": "find_supply_chain",
+        "description": (
+            "Find upstream and downstream supply chain companies for a Taiwan stock. "
+            "Also returns related companies that mention this stock in their own supply chain. "
+            "Use when the user asks about supply chain beneficiaries, ecosystem plays, or "
+            "who benefits when a particular company grows."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "4-digit Taiwan stock ticker e.g. '2330'"},
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
+        "name": "screen_by_theme",
+        "description": (
+            "List all Taiwan stocks tagged with an investment theme. "
+            "Themes include: AI_伺服器, ABF_載板, CoWoS, HBM, NVIDIA, EUV, 5G, CPO, Apple, etc. "
+            "Use when the user asks for stock ideas around a sector trend or thematic play."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "theme": {"type": "string", "description": "Theme name e.g. 'AI_伺服器', 'HBM', '5G'"},
+            },
+            "required": ["theme"],
+        },
+    },
+    {
         "name": "add_cash",
         "description": (
             "Record a cash deposit or withdrawal. Use when the user mentions depositing "
@@ -284,8 +334,124 @@ def _fetch_mcp_tools() -> list[dict]:
         return TOOLS  # fallback to hardcoded tools if MCP is unavailable
 
 
+def _run_research_tool(name: str, input_: dict) -> Any:
+    """Handle research tool calls directly via SQLite (no MCP required)."""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    try:
+        if name == "get_company_research":
+            ticker = input_["ticker"]
+            company = con.execute(
+                "SELECT ticker, name, sector, industry, market_cap, ev, description "
+                "FROM research_companies WHERE ticker = ?", (ticker,)
+            ).fetchone()
+            if company is None:
+                return {"error": f"Ticker '{ticker}' not found in research database"}
+            sc = con.execute(
+                "SELECT direction, entity, role_note FROM research_supply_chain "
+                "WHERE ticker = ? ORDER BY direction, entity", (ticker,)
+            ).fetchall()
+            custs = con.execute(
+                "SELECT counterpart, is_customer, note FROM research_customers "
+                "WHERE ticker = ? ORDER BY counterpart", (ticker,)
+            ).fetchall()
+            themes = con.execute(
+                "SELECT theme FROM research_themes WHERE ticker = ? ORDER BY theme", (ticker,)
+            ).fetchall()
+            return {
+                "ticker": company["ticker"], "name": company["name"],
+                "sector": company["sector"], "industry": company["industry"],
+                "market_cap_million_twd": company["market_cap"],
+                "ev_million_twd": company["ev"], "description": company["description"],
+                "supply_chain": [
+                    {"direction": r["direction"], "entity": r["entity"], "role_note": r["role_note"]}
+                    for r in sc
+                ],
+                "customers": [
+                    {"counterpart": r["counterpart"], "is_customer": bool(r["is_customer"]), "note": r["note"]}
+                    for r in custs
+                ],
+                "themes": [r["theme"] for r in themes],
+            }
+
+        if name == "find_supply_chain":
+            ticker = input_["ticker"]
+            name_row = con.execute(
+                "SELECT name FROM research_companies WHERE ticker = ?", (ticker,)
+            ).fetchone()
+            if name_row is None:
+                return {"error": f"Ticker '{ticker}' not found in research database"}
+            company_name = name_row["name"]
+            sc = con.execute(
+                "SELECT direction, entity, role_note FROM research_supply_chain "
+                "WHERE ticker = ? ORDER BY direction, entity", (ticker,)
+            ).fetchall()
+            related = con.execute(
+                """
+                SELECT DISTINCT sc.ticker, rc.name, rc.industry
+                FROM research_supply_chain sc
+                JOIN research_companies rc ON rc.ticker = sc.ticker
+                WHERE sc.ticker != ? AND (sc.entity LIKE ? OR sc.entity LIKE ?)
+                ORDER BY rc.name
+                """,
+                (ticker, f"%{ticker}%", f"%{company_name}%"),
+            ).fetchall()
+            return {
+                "ticker": ticker, "name": company_name,
+                "upstream": [
+                    {"entity": r["entity"], "role_note": r["role_note"]}
+                    for r in sc if r["direction"] == "upstream"
+                ],
+                "downstream": [
+                    {"entity": r["entity"], "role_note": r["role_note"]}
+                    for r in sc if r["direction"] == "downstream"
+                ],
+                "related_companies": [
+                    {"ticker": r["ticker"], "name": r["name"], "industry": r["industry"]}
+                    for r in related
+                ],
+            }
+
+        if name == "screen_by_theme":
+            theme = input_["theme"]
+            rows = con.execute(
+                """
+                SELECT rc.ticker, rc.name, rc.industry
+                FROM research_themes rt
+                JOIN research_companies rc ON rc.ticker = rt.ticker
+                WHERE rt.theme = ? ORDER BY rc.name
+                """,
+                (theme,),
+            ).fetchall()
+            if not rows:
+                available = con.execute(
+                    "SELECT theme, COUNT(*) as cnt FROM research_themes "
+                    "GROUP BY theme ORDER BY cnt DESC"
+                ).fetchall()
+                return {
+                    "error": f"Theme '{theme}' not found",
+                    "available_themes": [r["theme"] for r in available],
+                }
+            return {
+                "theme": theme, "total": len(rows),
+                "companies": [
+                    {"ticker": r["ticker"], "name": r["name"], "industry": r["industry"]}
+                    for r in rows
+                ],
+            }
+
+        return {"error": f"Unknown research tool: {name}"}
+    finally:
+        con.close()
+
+
+_RESEARCH_TOOLS = {"get_company_research", "find_supply_chain", "screen_by_theme"}
+
+
 def _run_tool(name: str, input_: dict, ledger: StockLedger) -> Any:
-    """Proxy tool calls to the MCP server."""
+    """Proxy tool calls: research tools run locally, others go to MCP."""
+    if name in _RESEARCH_TOOLS:
+        return _run_research_tool(name, input_)
     return _mcp_call(name, input_)
 
 

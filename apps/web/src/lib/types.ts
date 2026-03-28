@@ -941,3 +941,71 @@ export interface ImportResult {
   errors: { row: number; message: string; raw: string }[];
   dry_run: boolean;
 }
+
+// ── Research (My-TW-Coverage) ─────────────────────────────────────────────────
+
+export interface ResearchSupplyChainEntry {
+  direction: "upstream" | "downstream";
+  entity: string;
+  roleNote: string | null;
+}
+
+export interface ResearchCustomer {
+  counterpart: string;
+  isCustomer: boolean;
+  note: string | null;
+}
+
+export interface ResearchCompany {
+  ticker: string;
+  name: string;
+  sector: string | null;
+  industry: string | null;
+  marketCapMillionTwd: number | null;
+  evMillionTwd: number | null;
+  description: string | null;
+  supplyChain: ResearchSupplyChainEntry[];
+  customers: ResearchCustomer[];
+  themes: string[];
+}
+
+export interface ResearchThemeSummary {
+  themeName: string;
+  companyCount: number;
+}
+
+export interface ResearchThemesResponse {
+  total: number;
+  themes: ResearchThemeSummary[];
+}
+
+export interface ResearchThemeCompany {
+  ticker: string;
+  name: string;
+  industry: string | null;
+}
+
+export interface ResearchThemeResponse {
+  themeName: string;
+  total: number;
+  companies: ResearchThemeCompany[];
+}
+
+export interface ResearchSearchResult {
+  ticker: string;
+  name: string;
+  industry: string | null;
+  descriptionSnippet: string;
+}
+
+export interface ResearchSearchResponse {
+  total: number;
+  results: ResearchSearchResult[];
+}
+
+export interface ResearchSupplyChainResponse {
+  ticker: string;
+  upstream: { entity: string; roleNote: string | null }[];
+  downstream: { entity: string; roleNote: string | null }[];
+  relatedCompanies: { ticker: string; name: string; industry: string | null }[];
+}

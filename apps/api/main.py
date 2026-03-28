@@ -27,7 +27,7 @@ from .routers import (
     cash, demo, equity, positions, trades, daily, lots,
     todo, perf, rebalance, export_import, backup, benchmark, risk, execution,
     universe, watchlist, catalyst, overview, chat, alerts, chip, rolling,
-    chart, revenue, allocation, screener, anomaly,
+    chart, revenue, allocation, screener, anomaly, research,
 )
 from .routers import quotes_refresh, digest as digest_router
 
@@ -312,6 +312,7 @@ app.include_router(revenue.router,       prefix=PREFIX, tags=["revenue"])
 app.include_router(allocation.router,    prefix=PREFIX, tags=["allocation"])
 app.include_router(screener.router,      prefix=PREFIX, tags=["screener"])
 app.include_router(anomaly.router,       prefix=PREFIX, tags=["anomaly"])
+app.include_router(research.router,      prefix="/api/research", tags=["research"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

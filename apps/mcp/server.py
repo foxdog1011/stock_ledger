@@ -761,6 +761,188 @@ def add_cash(
 
 
 # ===========================================================================
+# Research tools (My-TW-Coverage integration)
+# ===========================================================================
+
+
+def _research_db() -> sqlite3.Connection:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+@mcp.tool()
+def get_company_research(ticker: str) -> dict[str, Any]:
+    """Get fundamental research profile for a Taiwan stock.
+
+    Returns company description, sector, industry, supply chain relationships,
+    customer/supplier links, and investment themes sourced from My-TW-Coverage.
+
+    Args:
+        ticker: 4-digit Taiwan stock ticker (e.g. "2330" for TSMC).
+
+    Returns:
+        Company profile with supply_chain, customers, suppliers, and themes lists.
+    """
+    try:
+        with _research_db() as con:
+            company = con.execute(
+                "SELECT ticker, name, sector, industry, market_cap, ev, description "
+                "FROM research_companies WHERE ticker = ?",
+                (ticker,),
+            ).fetchone()
+            if company is None:
+                return {"error": f"Ticker '{ticker}' not found in research database"}
+
+            supply_chain = con.execute(
+                "SELECT direction, entity, role_note FROM research_supply_chain "
+                "WHERE ticker = ? ORDER BY direction, entity",
+                (ticker,),
+            ).fetchall()
+
+            customers = con.execute(
+                "SELECT counterpart, is_customer, note FROM research_customers "
+                "WHERE ticker = ? ORDER BY counterpart",
+                (ticker,),
+            ).fetchall()
+
+            themes = con.execute(
+                "SELECT theme FROM research_themes WHERE ticker = ? ORDER BY theme",
+                (ticker,),
+            ).fetchall()
+
+        return {
+            "ticker": company["ticker"],
+            "name": company["name"],
+            "sector": company["sector"],
+            "industry": company["industry"],
+            "market_cap_million_twd": company["market_cap"],
+            "ev_million_twd": company["ev"],
+            "description": company["description"],
+            "supply_chain": [
+                {"direction": r["direction"], "entity": r["entity"], "role_note": r["role_note"]}
+                for r in supply_chain
+            ],
+            "customers": [
+                {"counterpart": r["counterpart"], "is_customer": bool(r["is_customer"]), "note": r["note"]}
+                for r in customers
+            ],
+            "themes": [r["theme"] for r in themes],
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_company_research"}
+
+
+@mcp.tool()
+def find_supply_chain(ticker: str) -> dict[str, Any]:
+    """Find upstream and downstream supply chain companies for a Taiwan stock.
+
+    Also returns related companies — other tickers whose supply chain mentions
+    this company, revealing indirect ecosystem relationships.
+
+    Args:
+        ticker: 4-digit Taiwan stock ticker (e.g. "2330").
+
+    Returns:
+        upstream, downstream lists and related_companies with ticker cross-references.
+    """
+    try:
+        with _research_db() as con:
+            name_row = con.execute(
+                "SELECT name FROM research_companies WHERE ticker = ?", (ticker,)
+            ).fetchone()
+            if name_row is None:
+                return {"error": f"Ticker '{ticker}' not found in research database"}
+            company_name = name_row["name"]
+
+            sc_rows = con.execute(
+                "SELECT direction, entity, role_note FROM research_supply_chain "
+                "WHERE ticker = ? ORDER BY direction, entity",
+                (ticker,),
+            ).fetchall()
+
+            related_rows = con.execute(
+                """
+                SELECT DISTINCT sc.ticker, rc.name, rc.industry
+                FROM research_supply_chain sc
+                JOIN research_companies rc ON rc.ticker = sc.ticker
+                WHERE sc.ticker != ?
+                  AND (sc.entity LIKE ? OR sc.entity LIKE ?)
+                ORDER BY rc.name
+                """,
+                (ticker, f"%{ticker}%", f"%{company_name}%"),
+            ).fetchall()
+
+        return {
+            "ticker": ticker,
+            "name": company_name,
+            "upstream": [
+                {"entity": r["entity"], "role_note": r["role_note"]}
+                for r in sc_rows if r["direction"] == "upstream"
+            ],
+            "downstream": [
+                {"entity": r["entity"], "role_note": r["role_note"]}
+                for r in sc_rows if r["direction"] == "downstream"
+            ],
+            "related_companies": [
+                {"ticker": r["ticker"], "name": r["name"], "industry": r["industry"]}
+                for r in related_rows
+            ],
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "find_supply_chain"}
+
+
+@mcp.tool()
+def screen_by_theme(theme: str) -> dict[str, Any]:
+    """List all Taiwan stocks tagged with an investment theme.
+
+    Themes include: AI_伺服器, ABF_載板, CoWoS, HBM, NVIDIA, EUV, 5G, CPO,
+    Apple, and others from the My-TW-Coverage database.
+
+    Args:
+        theme: Theme name to filter by (e.g. "AI_伺服器", "HBM", "5G").
+
+    Returns:
+        List of companies in the theme with ticker, name, and industry.
+    """
+    try:
+        with _research_db() as con:
+            rows = con.execute(
+                """
+                SELECT rc.ticker, rc.name, rc.industry
+                FROM research_themes rt
+                JOIN research_companies rc ON rc.ticker = rt.ticker
+                WHERE rt.theme = ?
+                ORDER BY rc.name
+                """,
+                (theme,),
+            ).fetchall()
+
+            if not rows:
+                # Return available themes as hint
+                available = con.execute(
+                    "SELECT theme, COUNT(*) as cnt FROM research_themes "
+                    "GROUP BY theme ORDER BY cnt DESC"
+                ).fetchall()
+                return {
+                    "error": f"Theme '{theme}' not found",
+                    "available_themes": [r["theme"] for r in available],
+                }
+
+        return {
+            "theme": theme,
+            "total": len(rows),
+            "companies": [
+                {"ticker": r["ticker"], "name": r["name"], "industry": r["industry"]}
+                for r in rows
+            ],
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "screen_by_theme"}
+
+
+# ===========================================================================
 # Entry point
 # ===========================================================================
 
