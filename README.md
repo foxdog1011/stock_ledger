@@ -45,7 +45,8 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ## Highlights
 
-- **AI portfolio analyst (J.A.R.V.I.S.)** — Claude claude-opus-4-6 with 9 tool-use functions (7 read + 2 write); agentic loop autonomously queries positions, risk metrics, P&L, and lot details before answering in natural language; can record trades and cash entries; SSE streaming renders token-by-token in a floating HUD panel
+- **AI portfolio analyst (J.A.R.V.I.S.)** — Claude claude-opus-4-6 with 12 tool-use functions; agentic loop autonomously queries positions, risk metrics, P&L, lot details, and company research before answering; can record trades and cash entries; SSE streaming renders token-by-token in a floating HUD panel
+- **Taiwan stock research database** — 1,735 companies (TWSE + OTC) with supply chain mapping (upstream/downstream), customer/supplier links, and 20 investment themes (AI server, EV, HBM, NVIDIA, etc.); sourced from [My-TW-Coverage](https://github.com/Timeverse/My-TW-Coverage) (MIT License), parsed and stored in SQLite
 - **Market anomaly detection** — PCA-based linear autoencoder on 6-feature multivariate time-series (price, volume, volatility, Z-score, Bollinger Band %B); data-driven threshold (μ + 2.5σ reconstruction error) replaces fixed contamination ratios; batch-scans all active positions simultaneously; analogous to multivariate SPC in manufacturing
 - **End-to-end ownership** — pure-Python core library → 40+ REST endpoints → TypeScript frontend, zero third-party portfolio SDK
 - **Domain-Driven Design** — separate `domain/` layer decouples business logic (risk, execution, overview) from API routing and persistence
@@ -131,6 +132,14 @@ User question
 ```
 
 The panel is **page-context aware** — it tells Claude which page the user is viewing so responses are more relevant. Tool calls are surfaced as cyan badges above each response.
+
+**Research tools (new):**
+
+```
+├─► get_company_research(ticker)  →  company profile, supply chain, themes from research DB
+├─► find_supply_chain(ticker)     →  upstream / downstream ecosystem + reverse lookup
+└─► screen_by_theme(theme)        →  list companies by investment theme (AI server, EV, etc.)
+```
 
 **Setup:**
 
@@ -326,6 +335,16 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `GET` | `/api/anomaly/batch` | Scan all active positions; returns per-symbol anomaly summary |
 | `GET` | `/api/anomaly/{symbol}` | Z-score + PCA autoencoder anomalies for a single ticker (`?days=&ae_threshold=`) |
 
+### Research (My-TW-Coverage)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/research/{ticker}` | Full company profile: sector, supply chain, customers, themes |
+| `GET` | `/api/research/search?q=` | Full-text search across 1,735 companies by name, industry, description |
+| `GET` | `/api/research/themes` | All investment themes with company count |
+| `GET` | `/api/research/theme/{name}` | Companies tagged with a specific theme |
+| `GET` | `/api/research/supply-chain/{ticker}` | Upstream, downstream, and related ecosystem companies |
+
 ### AI Chat
 
 | Method | Path | Description |
@@ -401,7 +420,8 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `/chip` | Chip distribution (籌碼) analysis |
 | `/revenue` | Revenue trend analysis |
 | `/rolling` | Rolling performance metrics |
-| `/screener` | Stock screener |
+| `/screener` | Stock screener (sector, revenue YoY, foreign net flow filters) |
+| `/research` | Taiwan stock research database: 1,735 companies, 20 investment themes, supply chain browser, full-text search |
 | `/universe` | Company research database + watchlist (tabbed: 股票池 / 觀察清單) |
 | `/catalyst` | Event log with Plan A/B/C/D scenario planner |
 | `/digest` | Daily portfolio report history |
@@ -453,9 +473,13 @@ stock_ledger/
 │           │   └── …
 │           ├── hooks/         #   TanStack Query hooks + mutations
 │           └── lib/           #   api.ts, types.ts, format.ts
+├── scripts/
+│   └── ingest_coverage.py     # My-TW-Coverage markdown parser + ETL (1,735 companies)
 ├── tests/                     # 336 tests across 13 files
 ├── docker-compose.yml
-└── data/                      # SQLite DB (auto-created)
+└── data/
+    ├── ledger.db              # SQLite DB (auto-created)
+    └── My-TW-Coverage/        # Cloned research repo (gitignored)
 ```
 
 ---
@@ -514,7 +538,7 @@ terraform apply   # provisions all resources in ~2 minutes
 | Anomaly Detection | scikit-learn PCA (linear autoencoder), Z-score (rolling window) |
 | Core library | Python 3.11, SQLite (stdlib only) |
 | Backend | FastAPI, Uvicorn, Pandas, APScheduler, yfinance |
-| Frontend | Next.js 15, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui |
+| Frontend | Next.js 15, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui (TradingView dark theme) |
 | Testing | Python `unittest` (336 tests, 13 files) |
 | Container | Docker, Docker Compose |
 | Infrastructure | AWS EC2, ECR, VPC, IAM, CloudWatch — provisioned via Terraform |
@@ -566,6 +590,9 @@ Add to your `claude_desktop_config.json`:
 | `delete_price_alert` | Remove a price alert by ID |
 | `add_trade` | Record a new buy/sell trade |
 | `add_cash` | Record a cash deposit or withdrawal |
+| `get_company_research` | Company profile, supply chain, and themes from the research DB |
+| `find_supply_chain` | Upstream / downstream supply chain + reverse ecosystem lookup |
+| `screen_by_theme` | List all companies tagged with an investment theme |
 
 ### Example Prompts (via Claude Desktop)
 
@@ -597,3 +624,20 @@ Add to your `claude_desktop_config.json`:
 | `AUTO_REFRESH_QUOTES_ON_TRADE` | API | `1` | Set to `0` to disable background refresh on trade |
 | `TZ` | API | `Asia/Taipei` | Scheduler timezone |
 | `DEMO_MODE` | API | `0` | Set to `1` to block all write operations (read-only public demo) |
+
+---
+
+## Data Attribution
+
+Taiwan stock research data (company profiles, supply chain, investment themes) sourced from:
+
+**[My-TW-Coverage](https://github.com/Timeverse/My-TW-Coverage)** by idk_mostoftime — MIT License
+
+> Covers 1,735 TWSE + OTC companies across 99 industries, with 4,900+ wikilinks forming a knowledge graph of supply chain relationships and investment themes.
+
+To populate the research database locally:
+
+```bash
+git clone https://github.com/Timeverse/My-TW-Coverage.git data/My-TW-Coverage
+python scripts/ingest_coverage.py --repo-path data/My-TW-Coverage --db-path data/ledger.db
+```
