@@ -28,9 +28,16 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 **http://35.76.187.226**
 
+> Hosted on AWS EC2 (ap-northeast-1, t2.micro). The instance may be stopped to save costs — if the page does not load, the instance is likely in a stopped state and will need to be started. Allow a minute or two for Docker services to come up after the instance starts.
+>
 > Data is a simulated sample portfolio and does not represent real holdings.
 >
 > Seed / reset sample data: `POST /api/demo/seed` (5 US positions + 13 months of history)
+>
+> If starting fresh (e.g. after a restore or first boot), seed demo data via:
+> ```bash
+> curl -X POST http://35.76.187.226/api/demo/seed
+> ```
 >
 > To run in read-only mode: set `DEMO_MODE=1` in `.env` to block all write operations.
 
