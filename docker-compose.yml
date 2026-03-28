@@ -61,7 +61,7 @@ services:
     image: ${ECR_REGISTRY:+${ECR_REGISTRY}/}stock-ledger-web:latest
     container_name: stock-ledger-web
     ports:
-      - "3001:3000"
+      - "80:3000"
     environment:
       DOCKER: "1"
       # Server-side only: Next.js rewrites /api/* → ${API_URL}/api/*
