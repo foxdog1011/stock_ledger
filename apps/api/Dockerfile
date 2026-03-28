@@ -23,6 +23,7 @@ COPY domain/    ./domain/
 COPY analysis/  ./analysis/
 COPY apps/api/  ./apps/api/
 COPY apps/__init__.py ./apps/__init__.py
+COPY scripts/   ./scripts/
 
 # Persistent data directory (mount a volume here)
 RUN mkdir -p /data

@@ -119,3 +119,28 @@ jobs:
 
             # Cleanup old images
             docker image prune -f
+
+            # ── Research data ingest ─────────────────────────────────────────
+            # Clone My-TW-Coverage on first deploy; pull updates on subsequent runs
+            if [ ! -d /home/ec2-user/My-TW-Coverage ]; then
+              git clone https://github.com/Timeverse/My-TW-Coverage.git \
+                /home/ec2-user/My-TW-Coverage
+            else
+              git -C /home/ec2-user/My-TW-Coverage pull --ff-only || true
+            fi
+
+            # Wait for the API container to pass its health check (up to 60s)
+            for i in $(seq 1 12); do
+              if docker exec stock-ledger-api \
+                   python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" \
+                   2>/dev/null; then
+                echo "API healthy"; break
+              fi
+              echo "Waiting for API... ($i/12)"; sleep 5
+            done
+
+            # Copy coverage repo into container and run the ingest script
+            docker cp /home/ec2-user/My-TW-Coverage stock-ledger-api:/tmp/My-TW-Coverage
+            docker exec stock-ledger-api python scripts/ingest_coverage.py \
+              --repo-path /tmp/My-TW-Coverage \
+              --db-path /data/ledger.db
