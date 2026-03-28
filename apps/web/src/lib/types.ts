@@ -979,16 +979,60 @@ export interface ResearchThemesResponse {
   themes: ResearchThemeSummary[];
 }
 
+export type SupplyChainTier = "upstream" | "downstream" | "integrated" | null;
+
 export interface ResearchThemeCompany {
   ticker: string;
   name: string;
   industry: string | null;
+  supplyChainTier: SupplyChainTier;
 }
 
 export interface ResearchThemeResponse {
   themeName: string;
   total: number;
   companies: ResearchThemeCompany[];
+}
+
+export interface ResearchThemeSupplyChainCompany {
+  ticker: string;
+  name: string;
+  industry: string | null;
+  tier: SupplyChainTier;
+}
+
+export interface ResearchThemeSupplyChainLink {
+  from: string;
+  to: string;
+  direction: "upstream" | "downstream";
+}
+
+export interface ResearchThemeSupplyChainResponse {
+  themeName: string;
+  upstream: ResearchThemeSupplyChainCompany[];
+  integrated: ResearchThemeSupplyChainCompany[];
+  downstream: ResearchThemeSupplyChainCompany[];
+  unknown: ResearchThemeSupplyChainCompany[];
+  links: ResearchThemeSupplyChainLink[];
+}
+
+export interface ResearchTreeNode {
+  entity: string;
+  ticker: string | null;
+  name: string | null;
+  industry: string | null;
+  roleNote?: string | null;
+  via?: string;
+}
+
+export interface ResearchSupplyChainTree {
+  ticker: string;
+  name: string;
+  industry: string | null;
+  upstreamL1: ResearchTreeNode[];
+  upstreamL2: ResearchTreeNode[];
+  downstreamL1: ResearchTreeNode[];
+  downstreamL2: ResearchTreeNode[];
 }
 
 export interface ResearchSearchResult {

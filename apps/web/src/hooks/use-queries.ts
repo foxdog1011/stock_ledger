@@ -853,10 +853,12 @@ export function useDeleteRollingLog() {
 // ── Chart / Technical Indicators ──────────────────────────────────────────────
 import type {
   ChartData, RevenueData, AllocationData, ScreenerResponse, AnomalyResult, AnomalyBatchResult,
-  ResearchCompany, ResearchThemesResponse, ResearchThemeResponse, ResearchSearchResponse, ResearchSupplyChainResponse,
+  ResearchCompany, ResearchThemesResponse, ResearchThemeResponse, ResearchSearchResponse,
+  ResearchSupplyChainResponse, ResearchThemeSupplyChainResponse, ResearchSupplyChainTree,
 } from "@/lib/types";
 import {
   mapResearchCompany, mapResearchThemes, mapResearchTheme, mapResearchSearch, mapResearchSupplyChain,
+  mapResearchThemeSupplyChain, mapResearchSupplyChainTree,
 } from "@/lib/api";
 
 export function useChart(symbol: string | null, days = 120) {
@@ -985,5 +987,27 @@ export function useResearchSearch(q: string, limit?: number) {
     queryFn: () => fetcher(urls.researchSearch(q, limit)).then(mapResearchSearch) as Promise<ResearchSearchResponse>,
     enabled: q.length >= 2,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useResearchThemeSupplyChain(theme: string | null) {
+  return useQuery({
+    queryKey: ["research", "themeSupplyChain", theme],
+    queryFn: () =>
+      fetcher(urls.researchThemeSupplyChain(theme!))
+        .then(mapResearchThemeSupplyChain) as Promise<ResearchThemeSupplyChainResponse>,
+    enabled: !!theme,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useResearchSupplyChainTree(ticker: string | null, depth = 2) {
+  return useQuery({
+    queryKey: ["research", "supplyChainTree", ticker, depth],
+    queryFn: () =>
+      fetcher(urls.researchSupplyChainTree(ticker!, depth))
+        .then(mapResearchSupplyChainTree) as Promise<ResearchSupplyChainTree>,
+    enabled: !!ticker,
+    staleTime: 10 * 60 * 1000,
   });
 }

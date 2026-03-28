@@ -348,11 +348,14 @@ export const urls = {
   })}`),
 
   // Research (My-TW-Coverage)
-  researchCompany:    (ticker: string) => url(`/api/research/${ticker}`),
-  researchSupplyChain: (ticker: string) => url(`/api/research/supply-chain/${ticker}`),
-  researchThemes:     () => url("/api/research/themes"),
-  researchTheme:      (theme: string) => url(`/api/research/theme/${encodeURIComponent(theme)}`),
-  researchSearch:     (q: string, limit?: number) =>
+  researchCompany:            (ticker: string) => url(`/api/research/${ticker}`),
+  researchSupplyChain:         (ticker: string) => url(`/api/research/supply-chain/${ticker}`),
+  researchSupplyChainTree:     (ticker: string, depth?: number) =>
+    url(`/api/research/supply-chain/${ticker}/tree${qs({ depth: depth != null ? String(depth) : undefined })}`),
+  researchThemes:              () => url("/api/research/themes"),
+  researchTheme:               (theme: string) => url(`/api/research/theme/${encodeURIComponent(theme)}`),
+  researchThemeSupplyChain:    (theme: string) => url(`/api/research/theme/${encodeURIComponent(theme)}/supply-chain`),
+  researchSearch:              (q: string, limit?: number) =>
     url(`/api/research/search${qs({ q, limit: limit != null ? String(limit) : undefined })}`),
 } as const;
 
@@ -1270,10 +1273,52 @@ export function mapResearchTheme(raw: Raw): ResearchThemeResponse {
     themeName: raw.theme_name as string,
     total:     raw.total as number,
     companies: ((raw.companies ?? []) as Raw[]).map((c) => ({
-      ticker:   c.ticker as string,
-      name:     c.name as string,
-      industry: (c.industry as string | null) ?? null,
+      ticker:          c.ticker as string,
+      name:            c.name as string,
+      industry:        (c.industry as string | null) ?? null,
+      supplyChainTier: (c.supply_chain_tier as string | null ?? null) as import("@/lib/types").SupplyChainTier,
     })),
+  };
+}
+
+export function mapResearchThemeSupplyChain(raw: Raw): import("@/lib/types").ResearchThemeSupplyChainResponse {
+  const mapCompany = (c: Raw) => ({
+    ticker:   c.ticker as string,
+    name:     c.name as string,
+    industry: (c.industry as string | null) ?? null,
+    tier:     (c.tier as string | null ?? null) as import("@/lib/types").SupplyChainTier,
+  });
+  return {
+    themeName:  raw.theme_name as string,
+    upstream:   ((raw.upstream   ?? []) as Raw[]).map(mapCompany),
+    integrated: ((raw.integrated ?? []) as Raw[]).map(mapCompany),
+    downstream: ((raw.downstream ?? []) as Raw[]).map(mapCompany),
+    unknown:    ((raw.unknown    ?? []) as Raw[]).map(mapCompany),
+    links: ((raw.links ?? []) as Raw[]).map((l) => ({
+      from:      l.from as string,
+      to:        l.to as string,
+      direction: l.direction as "upstream" | "downstream",
+    })),
+  };
+}
+
+export function mapResearchSupplyChainTree(raw: Raw): import("@/lib/types").ResearchSupplyChainTree {
+  const mapNode = (n: Raw) => ({
+    entity:   n.entity as string,
+    ticker:   (n.ticker as string | null) ?? null,
+    name:     (n.name as string | null) ?? null,
+    industry: (n.industry as string | null) ?? null,
+    roleNote: (n.role_note as string | null) ?? null,
+    via:      (n.via as string | undefined),
+  });
+  return {
+    ticker:       raw.ticker as string,
+    name:         raw.name as string,
+    industry:     (raw.industry as string | null) ?? null,
+    upstreamL1:   ((raw.upstream_l1   ?? []) as Raw[]).map(mapNode),
+    upstreamL2:   ((raw.upstream_l2   ?? []) as Raw[]).map(mapNode),
+    downstreamL1: ((raw.downstream_l1 ?? []) as Raw[]).map(mapNode),
+    downstreamL2: ((raw.downstream_l2 ?? []) as Raw[]).map(mapNode),
   };
 }
 
