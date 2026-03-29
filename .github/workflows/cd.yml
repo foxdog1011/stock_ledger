@@ -121,13 +121,15 @@ jobs:
             docker image prune -f
 
             # ── Research data ingest ─────────────────────────────────────────
-            # Clone My-TW-Coverage on first deploy; pull updates on subsequent runs
+            # Clone My-TW-Coverage (shallow to save disk) or pull latest
             if [ ! -d /home/ec2-user/My-TW-Coverage ]; then
-              git clone https://github.com/Timeverse/My-TW-Coverage.git \
+              git clone --depth 1 https://github.com/Timeverse/My-TW-Coverage.git \
                 /home/ec2-user/My-TW-Coverage
             else
-              git -C /home/ec2-user/My-TW-Coverage pull --ff-only || true
+              git -C /home/ec2-user/My-TW-Coverage fetch --depth 1 origin main \
+                && git -C /home/ec2-user/My-TW-Coverage reset --hard origin/main || true
             fi
+            df -h /home  # log disk usage after clone
 
             # Wait for the API container to pass its health check (up to 60s)
             for i in $(seq 1 12); do
