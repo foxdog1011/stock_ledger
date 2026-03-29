@@ -74,6 +74,8 @@ def _resolve_entity_ticker(con: sqlite3.Connection, entity: str) -> str | None:
 def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA cache_size=-32000")  # 32 MB page cache
     return con
 
 

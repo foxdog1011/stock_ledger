@@ -10,7 +10,7 @@ const primaryLinks = [
   { href: "/overview",    label: "總覽" },
   { href: "/portfolio",   label: "投資組合" },
   { href: "/rolling",     label: "滾動分析" },
-  { href: "/alerts",      label: "警示" },
+  { href: "/monitor",     label: "監控" },
   { href: "/chip",        label: "籌碼" },
   { href: "/positions",   label: "持倉" },
   { href: "/research",    label: "研究" },
@@ -21,15 +21,12 @@ const secondaryLinks = [
   { href: "/allocation",  label: "資產配置" },
   { href: "/revenue",     label: "月營收" },
   { href: "/screener",    label: "選股篩選" },
-  { href: "/anomaly",     label: "異常偵測" },
-  { href: "/trades",      label: "交易紀錄" },
-  { href: "/cash",        label: "現金" },
+  { href: "/ledger",      label: "帳務紀錄" },
   { href: "/universe",    label: "股票池 / 觀察清單" },
   { href: "/catalyst",    label: "催化劑" },
   { href: "/offsetting",  label: "對沖試算" },
   { href: "/digest",      label: "日報" },
-  { href: "/import",      label: "匯入" },
-  { href: "/settings",    label: "設定" },
+  { href: "/operations",  label: "操作中心" },
 ] as const;
 
 export function Nav() {

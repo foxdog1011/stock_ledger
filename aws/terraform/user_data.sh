@@ -49,6 +49,15 @@ server {
     listen 80;
     server_name _;
 
+    # Gzip compression
+    gzip            on;
+    gzip_vary       on;
+    gzip_proxied    any;
+    gzip_comp_level 5;
+    gzip_types      text/plain text/css application/json application/javascript
+                    text/xml application/xml application/xml+rss text/javascript
+                    image/svg+xml;
+
     # Increase timeouts for SSE streaming (JARVIS)
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
@@ -62,6 +71,14 @@ server {
         # Disable buffering for SSE streaming
         proxy_buffering    off;
         proxy_cache        off;
+    }
+
+    # Next.js static assets — long-lived cache (content-hashed filenames)
+    location /_next/static/ {
+        proxy_pass         http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        add_header         Cache-Control "public, max-age=31536000, immutable";
     }
 
     # Web → Next.js
