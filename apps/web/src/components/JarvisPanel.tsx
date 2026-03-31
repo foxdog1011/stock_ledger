@@ -20,19 +20,36 @@ type Message = {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TOOL_LABELS: Record<string, string> = {
-  get_portfolio_snapshot: "Snapshot",
-  get_positions:          "Positions",
-  get_cash_balance:       "Cash",
-  get_recent_trades:      "Trades",
-  get_lots:               "Lot Details",
-  get_perf_summary:       "Performance",
-  get_risk_metrics:       "Risk Metrics",
-  add_trade:              "Recording Trade",
-  add_cash:               "Recording Cash",
+  get_portfolio_snapshot:   "Snapshot",
+  get_positions:            "Positions",
+  get_cash_balance:         "Cash",
+  get_recent_trades:        "Trades",
+  get_lots:                 "Lot Details",
+  get_perf_summary:         "Performance",
+  get_risk_metrics:         "Risk Metrics",
+  add_trade:                "Recording Trade",
+  add_cash:                 "Recording Cash",
+  get_quote:                "Real-time Quote",
+  get_technical_indicators: "Technical Analysis",
+  get_news:                 "News",
 };
 
 const WRITE_TOOLS = new Set(["add_trade", "add_cash"]);
 const LS_KEY = "jarvis_messages";
+const SESSION_KEY = "jarvis_session_id";
+
+function getOrCreateSessionId(): string {
+  try {
+    const existing = localStorage.getItem(SESSION_KEY);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    localStorage.setItem(SESSION_KEY, id);
+    return id;
+  } catch {
+    return "";
+  }
+}
+
 
 const PAGE_LABELS: Record<string, string> = {
   "/overview":   "Overview Dashboard",
@@ -199,7 +216,11 @@ export function JarvisPanel() {
       const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, page_context: resolvePageLabel() }),
+        body: JSON.stringify({
+          messages: history,
+          page_context: resolvePageLabel(),
+          session_id: getOrCreateSessionId(),
+        }),
       });
 
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -323,7 +344,10 @@ export function JarvisPanel() {
               <button
                 onClick={() => {
                   setMessages([]);
-                  try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+                  try {
+                    localStorage.removeItem(LS_KEY);
+                    localStorage.removeItem(SESSION_KEY);
+                  } catch { /* ignore */ }
                 }}
                 title="Clear conversation"
                 className="text-zinc-600 hover:text-zinc-400 transition-colors"

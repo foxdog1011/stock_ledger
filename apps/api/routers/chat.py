@@ -5,6 +5,8 @@ import json
 import math
 import os
 import sqlite3
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from typing import Any, Generator
 
@@ -216,6 +218,71 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "compare_benchmark",
+        "description": (
+            "Compare portfolio cumulative return against a benchmark index. "
+            "Returns excess return, tracking error, correlation, and information ratio. "
+            "Available benchmarks: 0050 (Taiwan 50 ETF), TAIEX, 0056, SPY, QQQ. "
+            "Use when the user asks how their portfolio compares to the market."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "bench": {"type": "string", "description": "Benchmark ticker e.g. '0050', 'SPY'", "default": "0050"},
+                "start": {"type": "string", "description": "Start date YYYY-MM-DD (default: 1 year ago)"},
+                "end":   {"type": "string", "description": "End date YYYY-MM-DD (default: today)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_quote",
+        "description": (
+            "Get a comprehensive real-time quote for any stock: current price, "
+            "change %, volume, PE ratio, market cap, 52-week range, dividend yield. "
+            "Use when the user asks for the current price or basic market data of a stock."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker e.g. AAPL, 2330, 0050"},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
+        "name": "get_technical_indicators",
+        "description": (
+            "Compute technical indicators for a stock: Moving Averages (MA5/20/60), "
+            "RSI-14 (overbought/oversold), MACD (12/26/9 with trend signal), "
+            "and Bollinger Bands (20-day ±2σ). Use when the user asks about trends, "
+            "entry/exit signals, or technical analysis."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker e.g. AAPL, 2330"},
+                "days": {"type": "integer", "description": "History window in trading days (default 120)", "default": 120},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
+        "name": "get_news",
+        "description": (
+            "Fetch recent news headlines for a stock. Use when the user asks about "
+            "latest news, catalysts, or market sentiment for a company."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker e.g. AAPL, 2330"},
+                "count": {"type": "integer", "description": "Number of articles (default 5, max 10)", "default": 5},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
         "name": "add_cash",
         "description": (
             "Record a cash deposit or withdrawal. Use when the user mentions depositing "
@@ -244,7 +311,10 @@ def _default_range() -> tuple[str, str]:
 # MCP client helpers (streamable-http with session + SSE parsing)
 # ---------------------------------------------------------------------------
 
+import threading as _threading
+
 _MCP_SESSION_ID: str | None = None
+_MCP_SESSION_LOCK = _threading.Lock()
 _MCP_HEADERS = {"Accept": "application/json, text/event-stream"}
 
 
@@ -280,19 +350,23 @@ def _mcp_init() -> str | None:
 def _mcp_post(payload: dict) -> Any:
     """POST a JSON-RPC request to the MCP server, managing the session."""
     global _MCP_SESSION_ID
-    if _MCP_SESSION_ID is None:
-        _MCP_SESSION_ID = _mcp_init()
+    with _MCP_SESSION_LOCK:
+        if _MCP_SESSION_ID is None:
+            _MCP_SESSION_ID = _mcp_init()
+        session_id = _MCP_SESSION_ID
 
     headers = {**_MCP_HEADERS}
-    if _MCP_SESSION_ID:
-        headers["mcp-session-id"] = _MCP_SESSION_ID
+    if session_id:
+        headers["mcp-session-id"] = session_id
 
     resp = httpx.post(MCP_URL, json=payload, headers=headers, timeout=30.0)
     if resp.status_code == 400:
         # Session expired — re-initialize once
-        _MCP_SESSION_ID = _mcp_init()
-        if _MCP_SESSION_ID:
-            headers["mcp-session-id"] = _MCP_SESSION_ID
+        with _MCP_SESSION_LOCK:
+            _MCP_SESSION_ID = _mcp_init()
+            session_id = _MCP_SESSION_ID
+        if session_id:
+            headers["mcp-session-id"] = session_id
         resp = httpx.post(MCP_URL, json=payload, headers=headers, timeout=30.0)
 
     resp.raise_for_status()
@@ -448,6 +522,58 @@ def _run_research_tool(name: str, input_: dict) -> Any:
 _RESEARCH_TOOLS = {"get_company_research", "find_supply_chain", "screen_by_theme"}
 
 
+# ===========================================================================
+# Conversation memory (SQLite-backed)
+# ===========================================================================
+
+_MEMORY_CREATE_SQL = """
+CREATE TABLE IF NOT EXISTS chat_memory (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT    NOT NULL,
+    role       TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+)
+"""
+_MEMORY_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_chat_memory_session ON chat_memory(session_id, id)"
+_MEMORY_CONTEXT_LIMIT = 20  # max messages loaded from history
+
+
+def _memory_db() -> sqlite3.Connection:
+    con = sqlite3.connect(DB_PATH)
+    con.execute(_MEMORY_CREATE_SQL)
+    con.execute(_MEMORY_INDEX_SQL)
+    con.commit()
+    return con
+
+
+def _load_memory(session_id: str) -> list[dict]:
+    """Load the last N messages for a session."""
+    try:
+        with _memory_db() as con:
+            rows = con.execute(
+                "SELECT role, content FROM chat_memory "
+                "WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+                (session_id, _MEMORY_CONTEXT_LIMIT),
+            ).fetchall()
+        # Return in chronological order (oldest first)
+        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+    except Exception:
+        return []
+
+
+def _save_messages(session_id: str, messages: list[dict]) -> None:
+    """Persist new messages to chat memory."""
+    try:
+        with _memory_db() as con:
+            con.executemany(
+                "INSERT INTO chat_memory (session_id, role, content) VALUES (?, ?, ?)",
+                [(session_id, m["role"], m["content"]) for m in messages],
+            )
+    except Exception:
+        pass  # Memory is best-effort; never block the chat response
+
+
 def _run_tool(name: str, input_: dict, ledger: StockLedger) -> Any:
     """Proxy tool calls: research tools run locally, others go to MCP."""
     if name in _RESEARCH_TOOLS:
@@ -459,7 +585,12 @@ def _sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload, default=str)}\n\n"
 
 
-def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = "") -> Generator[str, None, None]:
+def _stream_chat(
+    messages: list[dict],
+    ledger: StockLedger,
+    page_context: str = "",
+    session_id: str | None = None,
+) -> Generator[str, None, None]:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         yield _sse_event({"type": "error", "text": "ANTHROPIC_API_KEY is not configured on the server."})
@@ -471,7 +602,14 @@ def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = 
             today=date.today().isoformat(),
             page_label=page_context or "unknown page",
         )
-        current_messages = list(messages)
+
+        # Prepend memory context if session_id provided
+        if session_id:
+            past = _load_memory(session_id)
+            current_messages = past + list(messages)
+        else:
+            current_messages = list(messages)
+
         available_tools = _fetch_mcp_tools()
 
         # ── Agentic loop: run tool calls until the model stops requesting them ──
@@ -488,21 +626,30 @@ def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = 
                 break
 
             current_messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
 
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
+            tool_blocks = [b for b in response.content if b.type == "tool_use"]
+            for block in tool_blocks:
                 yield _sse_event({"type": "tool_call", "name": block.name})
+
+            # Run all tool calls for this turn in parallel
+            tool_results: list[dict] = [{}] * len(tool_blocks)
+
+            def _call(idx_block: tuple[int, Any]) -> tuple[int, Any]:
+                idx, block = idx_block
                 try:
-                    result = _run_tool(block.name, block.input, ledger)
+                    return idx, _run_tool(block.name, block.input, ledger)
                 except Exception as exc:
-                    result = {"error": str(exc)}
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(result, default=str),
-                })
+                    return idx, {"error": str(exc)}
+
+            with ThreadPoolExecutor(max_workers=min(len(tool_blocks), 6)) as pool:
+                futures = {pool.submit(_call, (i, b)): i for i, b in enumerate(tool_blocks)}
+                for future in as_completed(futures):
+                    idx, result = future.result()
+                    tool_results[idx] = {
+                        "type": "tool_result",
+                        "tool_use_id": tool_blocks[idx].id,
+                        "content": json.dumps(result, default=str),
+                    }
 
             current_messages.append({"role": "user", "content": tool_results})
 
@@ -515,6 +662,10 @@ def _stream_chat(messages: list[dict], ledger: StockLedger, page_context: str = 
         ) as stream:
             for text in stream.text_stream:
                 yield _sse_event({"type": "text", "text": text})
+
+        # Persist new messages to memory
+        if session_id:
+            _save_messages(session_id, list(messages))
 
         yield _sse_event({"type": "done"})
 
@@ -532,14 +683,16 @@ class _Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[_Message]
     page_context: str = ""
+    session_id: str = ""  # client-supplied session ID; empty = no memory
 
 
 @router.post("/chat/stream")
 def chat_stream(body: ChatRequest, ledger: StockLedger = Depends(get_ledger)):
     """SSE endpoint: streams tool-call events then the final text response."""
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    session_id = body.session_id or None
     return StreamingResponse(
-        _stream_chat(messages, ledger, body.page_context),
+        _stream_chat(messages, ledger, body.page_context, session_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

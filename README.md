@@ -64,9 +64,9 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ┌───────────────────────────────────────────────────────────────┐
 │  Next.js 15  ·  TypeScript  ·  TanStack Query v5  ·  shadcn   │
 │  /overview /portfolio /positions /lots /universe /catalyst     │
-│  /digest /offsetting /anomaly /alerts /settings  …            │
-│  /anomaly /alerts /allocation /chip /revenue /rolling         │
-│  /screener  …                                                  │
+│  /digest /offsetting /ledger /monitor /operations             │
+│  /allocation /chip /revenue /rolling /screener  …             │
+│                                                                │
 │                                                                │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │  J.A.R.V.I.S. floating panel  (Ctrl+J, any page)        │  │
@@ -242,7 +242,7 @@ Bootstrap historical prices from Yahoo Finance (no API key) for 0050, TAIEX, SPY
 
 ### Market Anomaly Detection
 
-`/anomaly` — two panels:
+`/monitor` (異常偵測 tab) — two panels:
 
 1. **Batch scan** — auto-detects anomalies across all active positions; shows per-symbol anomaly count, severity badge, and latest signal description
 2. **Single symbol query** — enter any ticker; returns unified table of Z-score and autoencoder anomalies sorted by date, with close price, daily return %, severity level, and plain-language reason
@@ -287,7 +287,7 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | Soft delete | `is_void` flag on `cash_entries` and `trades`; history is never destroyed |
 | CSV import | `dry_run=true` previews insert/skip/error counts before committing |
 | CSV export | Trades, cash |
-| DB backup / restore | Download and re-upload the raw SQLite file from `/settings` |
+| DB backup / restore | Download and re-upload the raw SQLite file from `/operations` (設定 tab) |
 
 ---
 
@@ -414,8 +414,9 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `/portfolio` | Equity curve, daily P&L chart, benchmark comparison, asset allocation donut |
 | `/positions` | Holdings with cost impact analysis and expandable lot details |
 | `/lots/[symbol]` | Lot-level breakdown + bubble chart (unrealized % vs. underwater %) |
-| `/anomaly` | Market anomaly detection: batch portfolio scan + single symbol Z-score/autoencoder query |
-| `/alerts` | Price alert management |
+| `/ledger` | 帳務紀錄 — tabbed: **交易紀錄** (trade history + void) · **現金** (cash ledger + void) |
+| `/monitor` | 監控中心 — tabbed: **異常偵測** (batch portfolio scan + single Z-score/autoencoder) · **價格警示** (alert management) |
+| `/operations` | 操作中心 — tabbed: **匯入資料** (CSV upload + dry-run preview) · **設定** (provider config, export, backup/restore, benchmark) |
 | `/allocation` | Portfolio allocation analysis and targets |
 | `/chip` | Chip distribution (籌碼) analysis |
 | `/revenue` | Revenue trend analysis |
@@ -426,10 +427,6 @@ All runs logged to `quote_refresh_log` with timestamp, provider, inserted/skippe
 | `/catalyst` | Event log with Plan A/B/C/D scenario planner |
 | `/digest` | Daily portfolio report history |
 | `/offsetting` | Tax-loss harvesting simulator |
-| `/trades` | Trade history with void support |
-| `/cash` | Cash ledger with void support |
-| `/import` | CSV upload with dry-run preview |
-| `/settings` | Provider config, export, backup / restore, benchmark bootstrap |
 
 **Global:** J.A.R.V.I.S. floating panel (`Ctrl+J`) accessible from any route.
 
@@ -501,7 +498,11 @@ git push
           └── SSH → EC2
                 ├── docker compose pull
                 ├── docker compose up -d --remove-orphans
-                └── docker image prune -f
+                ├── docker image prune -f
+                └── Research data ingest
+                      ├── git clone/pull My-TW-Coverage → data/My-TW-Coverage/
+                      ├── docker cp data/My-TW-Coverage/ stock_ledger_api:/app/data/
+                      └── docker exec stock_ledger_api python scripts/ingest_coverage.py
 ```
 
 Zero-downtime rolling update on every push; no manual server access required after initial setup.
@@ -520,7 +521,7 @@ Provisioned with Terraform (`aws/terraform/`), all resources in `ap-northeast-1`
 | **Security Group** | Ports 80 / 443 / 22 |
 | **IAM Role** | EC2 instance profile with ECR pull + CloudWatch Logs permissions |
 | **CloudWatch** | Log group `/ec2/stock-ledger`, 14-day retention |
-| **Nginx** | Reverse proxy: `/api/*` → FastAPI :8000, `/*` → Next.js :3001 |
+| **Nginx** | Reverse proxy: `/api/*` → FastAPI :8000, `/*` → Next.js :3001; gzip compression; `/_next/static/` served with `Cache-Control: immutable` (1 year) |
 
 ```bash
 cd aws/terraform

@@ -15,6 +15,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import math
 import os
 import sqlite3
 from datetime import date, timedelta
@@ -309,13 +310,9 @@ def detect_anomalies(
         end_dt = date.today()
         start_dt = end_dt - timedelta(days=days + 90)
 
-        hist = yf.Ticker(yf_sym).history(
-            start=str(start_dt), end=str(end_dt), auto_adjust=True
-        )
+        hist = _yf_fetch(yf.Ticker(yf_sym), "history", start=str(start_dt), end=str(end_dt), auto_adjust=True)
         if hist.empty and sym.isdigit():
-            hist = yf.Ticker(f"{sym}.TWO").history(
-                start=str(start_dt), end=str(end_dt), auto_adjust=True
-            )
+            hist = _yf_fetch(yf.Ticker(f"{sym}.TWO"), "history", start=str(start_dt), end=str(end_dt), auto_adjust=True)
 
         if hist.empty:
             return {
@@ -940,6 +937,346 @@ def screen_by_theme(theme: str) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"error": str(exc), "tool": "screen_by_theme"}
+
+
+# ===========================================================================
+# Benchmark comparison tool
+# ===========================================================================
+
+
+@mcp.tool()
+def compare_benchmark(
+    bench: str = "0050",
+    start: str | None = None,
+    end: str | None = None,
+) -> dict[str, Any]:
+    """Compare portfolio performance against a benchmark index.
+
+    Computes cumulative return comparison, tracking error, correlation,
+    and information ratio between the portfolio and a benchmark.
+
+    Available benchmarks: 0050 (Taiwan 50 ETF), TAIEX (Taiwan Index),
+    0056 (High Dividend ETF), SPY, QQQ.
+    Note: bootstrap the benchmark data first via POST /benchmark/bootstrap
+    if you haven't done so.
+
+    Args:
+        bench: Benchmark ticker — "0050", "TAIEX", "0056", "SPY", "QQQ", etc.
+        start: Start date YYYY-MM-DD (default: 1 year ago).
+        end:   End date YYYY-MM-DD (default: today).
+
+    Returns:
+        Dict with metrics (excess_return_pct, tracking_error, correlation,
+        information_ratio) and most-recent comparison data point.
+    """
+    try:
+        import math
+        import pandas as pd
+        from ledger.equity import equity_curve as _portfolio_curve
+
+        today = date.today()
+        end_str   = end   or today.isoformat()
+        start_str = start or (today - timedelta(days=365)).isoformat()
+
+        ledger = _ledger()
+
+        # Fetch portfolio equity curve (monthly)
+        port_df = _portfolio_curve(ledger, start=start_str, end=end_str, freq="ME")
+        if port_df is None or port_df.empty:
+            return {"error": "No portfolio equity data in range", "tool": "compare_benchmark"}
+
+        port_df.index = pd.to_datetime(port_df.index)
+        valid_mask = port_df["total_equity"] > 0
+        if not valid_mask.any():
+            return {"error": "Portfolio has no equity in requested range", "tool": "compare_benchmark"}
+
+        first_valid = port_df.index[valid_mask][0]
+        port_df = port_df[port_df.index >= first_valid].copy()
+        base_equity = port_df["total_equity"].iloc[0]
+        if base_equity == 0:
+            return {"error": "Portfolio starting equity is zero", "tool": "compare_benchmark"}
+        port_df["cum_return_pct"] = (port_df["total_equity"] / base_equity - 1) * 100
+
+        # Fetch benchmark prices from DB
+        with sqlite3.connect(DB_PATH) as con:
+            rows = con.execute(
+                "SELECT date, close FROM prices WHERE ticker=? AND date BETWEEN ? AND ? ORDER BY date",
+                (bench.upper(), start_str, end_str),
+            ).fetchall()
+
+        if not rows:
+            return {
+                "error": f"No benchmark data for '{bench}' — run POST /benchmark/bootstrap first",
+                "tool": "compare_benchmark",
+            }
+
+        bench_s = pd.Series(
+            {pd.Timestamp(r[0]): float(r[1]) for r in rows},
+            dtype=float,
+        ).resample("ME").last().dropna()
+
+        bench_aligned = bench_s[bench_s.index >= first_valid]
+        if bench_aligned.empty:
+            return {"error": f"No benchmark data for '{bench}' after portfolio start", "tool": "compare_benchmark"}
+
+        base_bench = bench_aligned.iloc[0]
+        bench_cum  = (bench_aligned / base_bench - 1) * 100
+
+        aligned = pd.DataFrame({"portfolio": port_df["cum_return_pct"], "bench": bench_cum}).dropna()
+        if aligned.empty:
+            return {"error": "No overlapping dates between portfolio and benchmark", "tool": "compare_benchmark"}
+
+        aligned["excess"] = aligned["portfolio"] - aligned["bench"]
+        latest = aligned.iloc[-1]
+
+        # Metrics
+        ann = 12  # monthly
+        metrics: dict[str, Any] = {
+            "excess_return_pct": round(float(latest["excess"]), 2),
+            "portfolio_cum_return_pct": round(float(latest["portfolio"]), 2),
+            "bench_cum_return_pct": round(float(latest["bench"]), 2),
+        }
+        try:
+            port_p  = port_df["total_equity"].pct_change().dropna() * 100
+            bench_p = bench_aligned.pct_change().dropna() * 100
+            pf = pd.DataFrame({"p": port_p, "b": bench_p}).dropna()
+            if len(pf) >= 2:
+                excess_p = pf["p"] - pf["b"]
+                te = float(excess_p.std()) * math.sqrt(ann)
+                if not math.isnan(te):
+                    metrics["tracking_error_annualized"] = round(te, 4)
+                corr = float(pf["p"].corr(pf["b"]))
+                if not math.isnan(corr):
+                    metrics["correlation"] = round(corr, 4)
+                if metrics.get("tracking_error_annualized", 0) > 0:
+                    ir = float(excess_p.mean()) * ann / metrics["tracking_error_annualized"]
+                    if not math.isnan(ir):
+                        metrics["information_ratio"] = round(ir, 4)
+        except Exception:
+            pass
+
+        return {
+            "bench": bench.upper(),
+            "start": start_str,
+            "end": end_str,
+            "metrics": metrics,
+            "interpretation": (
+                "outperforming" if metrics["excess_return_pct"] > 0 else "underperforming"
+            ),
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "compare_benchmark"}
+
+
+# ===========================================================================
+# Market data tools (yfinance-backed)
+# ===========================================================================
+
+
+def _yf_symbol(symbol: str) -> str:
+    """Convert Taiwan numeric ticker to Yahoo Finance format."""
+    sym = symbol.upper().strip()
+    if sym.isdigit():
+        return f"{sym}.TW"
+    return sym
+
+
+def _yf_fetch(yf_ticker, method: str, retries: int = 2, **kwargs):
+    """Call a yfinance method with simple retry on transient failures."""
+    import time
+    last_exc: Exception = RuntimeError("no attempts")
+    for attempt in range(retries + 1):
+        try:
+            return getattr(yf_ticker, method)(**kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < retries:
+                time.sleep(1)
+    raise last_exc
+
+
+@mcp.tool()
+def get_quote(symbol: str) -> dict[str, Any]:
+    """Get a comprehensive real-time quote for any stock.
+
+    Returns current price, change, volume, PE ratio, 52-week range,
+    market cap, and dividend yield.  Taiwan numeric tickers (e.g. "2330")
+    are resolved automatically.
+
+    Args:
+        symbol: Ticker symbol — e.g. "AAPL", "2330", "0050".
+
+    Returns:
+        Quote dict with price, change_pct, volume, pe_ratio, market_cap, etc.
+    """
+    try:
+        import yfinance as yf
+
+        yf_sym = _yf_symbol(symbol)
+        ticker = yf.Ticker(yf_sym)
+        try:
+            fast = ticker.fast_info
+            # Validate it's a real object (not None/empty) by checking a key attr
+            _ = fast.last_price
+        except Exception:
+            fast = None
+        if fast is None and symbol.isdigit():
+            yf_sym = f"{symbol}.TWO"
+            ticker = yf.Ticker(yf_sym)
+            fast = ticker.fast_info
+        info = ticker.info or {}
+
+        price = getattr(fast, "last_price", None) or info.get("currentPrice") or info.get("regularMarketPrice")
+        prev_close = getattr(fast, "previous_close", None) or info.get("previousClose") or info.get("regularMarketPreviousClose")
+        change = (price - prev_close) if (price and prev_close) else None
+        change_pct = (change / prev_close * 100) if (change is not None and prev_close) else None
+
+        return {
+            "symbol": symbol.upper(),
+            "yf_symbol": yf_sym,
+            "price": round(price, 2) if price else None,
+            "change": round(change, 2) if change is not None else None,
+            "change_pct": round(change_pct, 2) if change_pct is not None else None,
+            "volume": getattr(fast, "three_month_average_volume", None) or info.get("volume"),
+            "market_cap": getattr(fast, "market_cap", None) or info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE") or info.get("forwardPE"),
+            "52w_high": getattr(fast, "year_high", None) or info.get("fiftyTwoWeekHigh"),
+            "52w_low": getattr(fast, "year_low", None) or info.get("fiftyTwoWeekLow"),
+            "dividend_yield": info.get("dividendYield"),
+            "currency": info.get("currency"),
+            "exchange": info.get("exchange"),
+            "as_of": date.today().isoformat(),
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_quote", "symbol": symbol}
+
+
+@mcp.tool()
+def get_technical_indicators(symbol: str, days: int = 120) -> dict[str, Any]:
+    """Compute technical indicators for a stock using recent price history.
+
+    Calculates Moving Averages (MA5/20/60), RSI-14, MACD (12/26/9),
+    and Bollinger Bands (20-day, ±2σ).  Useful for trend analysis and
+    entry/exit signal generation.
+
+    Args:
+        symbol: Ticker symbol — e.g. "AAPL", "2330".
+        days:   Number of trading days of history to use (default 120).
+
+    Returns:
+        Dict with ma, rsi, macd, bollinger keys plus latest close price.
+    """
+    try:
+        import yfinance as yf
+        import pandas as pd
+
+        yf_sym = _yf_symbol(symbol)
+        end_dt = date.today()
+        start_dt = end_dt - timedelta(days=days + 120)  # extra for warmup
+
+        hist = _yf_fetch(yf.Ticker(yf_sym), "history", start=str(start_dt), end=str(end_dt), auto_adjust=True)
+        if hist.empty and symbol.isdigit():
+            hist = _yf_fetch(yf.Ticker(f"{symbol}.TWO"), "history", start=str(start_dt), end=str(end_dt), auto_adjust=True)
+        if hist.empty:
+            return {"error": f"No price data for '{symbol}'", "tool": "get_technical_indicators"}
+
+        close = hist["Close"]
+        latest = float(close.iloc[-1])
+
+        # Moving averages
+        ma = {}
+        for period in (5, 10, 20, 60):
+            if len(close) >= period:
+                ma[f"ma{period}"] = round(float(close.rolling(period).mean().iloc[-1]), 2)
+
+        # RSI-14
+        delta = close.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, float("nan"))
+        rsi_series = 100 - (100 / (1 + rs))
+        rsi = round(float(rsi_series.iloc[-1]), 2) if not rsi_series.empty else None
+
+        # MACD (12, 26, 9)
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        histogram = macd_line - signal_line
+        macd = {
+            "macd": round(float(macd_line.iloc[-1]), 4),
+            "signal": round(float(signal_line.iloc[-1]), 4),
+            "histogram": round(float(histogram.iloc[-1]), 4),
+            "trend": "bullish" if macd_line.iloc[-1] > signal_line.iloc[-1] else "bearish",
+        }
+
+        # Bollinger Bands (20, 2σ)
+        bb_mid = close.rolling(20).mean()
+        bb_std = close.rolling(20).std()
+        bb_upper = bb_mid + 2 * bb_std
+        bb_lower = bb_mid - 2 * bb_std
+        bb_pct = (close - bb_lower) / (bb_upper - bb_lower)
+        bollinger = {
+            "upper": round(float(bb_upper.iloc[-1]), 2),
+            "mid": round(float(bb_mid.iloc[-1]), 2),
+            "lower": round(float(bb_lower.iloc[-1]), 2),
+            "pct_b": round(float(bb_pct.iloc[-1]), 3),
+            "position": "overbought" if bb_pct.iloc[-1] > 1 else ("oversold" if bb_pct.iloc[-1] < 0 else "normal"),
+        }
+
+        return {
+            "symbol": symbol.upper(),
+            "latest_close": round(latest, 2),
+            "ma": ma,
+            "rsi14": rsi,
+            "rsi_signal": "overbought" if (rsi or 0) > 70 else ("oversold" if (rsi or 100) < 30 else "neutral"),
+            "macd": macd,
+            "bollinger": bollinger,
+            "as_of": date.today().isoformat(),
+            "data_points": len(close),
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_technical_indicators", "symbol": symbol}
+
+
+@mcp.tool()
+def get_news(symbol: str, count: int = 5) -> dict[str, Any]:
+    """Fetch recent news articles for a stock.
+
+    Returns the latest news headlines, publishers, and publication times
+    for the given ticker.  Useful for catalyst monitoring and sentiment
+    awareness before entering or exiting a position.
+
+    Args:
+        symbol: Ticker symbol — e.g. "AAPL", "2330".
+        count:  Number of articles to return (default 5, max 10).
+
+    Returns:
+        {"symbol": ..., "articles": [{title, publisher, link, published}], "count": int}
+    """
+    try:
+        import yfinance as yf
+
+        yf_sym = _yf_symbol(symbol)
+        ticker = yf.Ticker(yf_sym)
+        try:
+            raw_news = ticker.news or []
+        except Exception:
+            raw_news = []
+
+        articles = []
+        for item in raw_news[: min(count, 10)]:
+            content = item.get("content", {})
+            articles.append({
+                "title": content.get("title") or item.get("title", ""),
+                "publisher": (content.get("provider") or {}).get("displayName") or item.get("publisher", ""),
+                "link": (content.get("canonicalUrl") or {}).get("url") or item.get("link", ""),
+                "published": content.get("pubDate") or item.get("providerPublishTime", ""),
+            })
+
+        return {"symbol": symbol.upper(), "articles": articles, "count": len(articles)}
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_news", "symbol": symbol}
 
 
 # ===========================================================================
