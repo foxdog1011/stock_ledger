@@ -1,0 +1,7 @@
+-r apps/api/requirements.txt
+-r apps/mcp/requirements.txt
+pytest>=8.0.0
+pytest-cov>=5.0.0
+# starlette must stay below 0.47.0 — mcp 1.x pulls in starlette 1.0+ which
+# removed the on_startup kwarg from Router.__init__, breaking FastAPI 0.115
+starlette<0.47.0

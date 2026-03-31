@@ -7,7 +7,8 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Claude](https://img.shields.io/badge/Claude-claude--opus--4--6-orange)
-![Tests](https://img.shields.io/badge/tests-336-brightgreen)
+![Tests](https://img.shields.io/badge/tests-346-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-compose-blue)
 ![AWS EC2](https://img.shields.io/badge/AWS-EC2%20ap--northeast--1-orange)
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)
@@ -54,7 +55,7 @@ A full-stack personal portfolio tracker and investment research platform — bui
 - **Investment research pipeline** — Universe (company DB) → Watchlist (investment thesis) → Catalyst (event tracking) → Daily Digest (auto-generated report)
 - **Multi-provider quote engine** — pluggable `PriceProvider` ABC with TWSE, FinMind, and Yahoo Finance backends; APScheduler cron at 18:00 TST; background refresh fires on every trade
 - **Tax-aware P&L** — commission and transaction tax flow into cost basis; lot-level FIFO / LIFO / HIFO breakdown; loss-offsetting simulation for tax-loss harvesting
-- **336 unit tests** across 13 test files covering domain services, API integration, and CSV import validation
+- **346 unit tests** across 13 test files covering domain services, API integration, and CSV import validation; **93% coverage** on domain/ and ledger/ layers (measured with pytest-cov)
 
 ---
 
@@ -217,7 +218,9 @@ DB_PATH=data/ledger.db uvicorn apps.api.main:app --reload --port 8000
 cd apps/web && API_URL=http://localhost:8000 npm run dev
 
 # 4. Run tests
-python -m pytest tests/          # 336 tests
+pip install -r requirements-test.txt   # includes pytest, pytest-cov, mcp, starlette pin
+python -m pytest tests/                # 346 tests
+python -m pytest tests/ --cov=domain --cov=ledger  # 93% coverage
 ```
 
 ---
@@ -472,7 +475,7 @@ stock_ledger/
 │           └── lib/           #   api.ts, types.ts, format.ts
 ├── scripts/
 │   └── ingest_coverage.py     # My-TW-Coverage markdown parser + ETL (1,735 companies)
-├── tests/                     # 336 tests across 13 files
+├── tests/                     # 346 tests across 13 files (93% domain/ledger coverage)
 ├── docker-compose.yml
 └── data/
     ├── ledger.db              # SQLite DB (auto-created)
@@ -507,6 +510,8 @@ git push
 
 Zero-downtime rolling update on every push; no manual server access required after initial setup.
 
+**Failure handling:** If any CI step (pytest / ESLint / tsc) fails, the CD job is blocked — the previous container version stays running. If the SSH deploy step itself fails mid-way, the old containers continue serving traffic until the next successful push. There is no automatic rollback to a previous image tag; manual recovery is `docker compose up -d` with the prior `:latest` image.
+
 ---
 
 ## AWS Infrastructure (Terraform)
@@ -540,7 +545,7 @@ terraform apply   # provisions all resources in ~2 minutes
 | Core library | Python 3.11, SQLite (stdlib only) |
 | Backend | FastAPI, Uvicorn, Pandas, APScheduler, yfinance |
 | Frontend | Next.js 15, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui (TradingView dark theme) |
-| Testing | Python `unittest` (336 tests, 13 files) |
+| Testing | Python `unittest` (346 tests, 13 files, 93% domain/ledger coverage) |
 | Container | Docker, Docker Compose |
 | Infrastructure | AWS EC2, ECR, VPC, IAM, CloudWatch — provisioned via Terraform |
 | CI/CD | GitHub Actions — pytest + ESLint + tsc → build ECR images → SSH deploy |
