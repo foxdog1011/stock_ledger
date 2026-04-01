@@ -38,11 +38,18 @@ const WRITE_TOOLS = new Set(["add_trade", "add_cash"]);
 const LS_KEY = "jarvis_messages";
 const SESSION_KEY = "jarvis_session_id";
 
+function randomId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return randomId();
+  }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 function getOrCreateSessionId(): string {
   try {
     const existing = localStorage.getItem(SESSION_KEY);
     if (existing) return existing;
-    const id = crypto.randomUUID();
+    const id = randomId();
     localStorage.setItem(SESSION_KEY, id);
     return id;
   } catch {
@@ -199,8 +206,8 @@ export function JarvisPanel() {
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || loading) return;
 
-    const userMsg: Message     = { id: crypto.randomUUID(), role: "user", content: text };
-    const assistantId          = crypto.randomUUID();
+    const userMsg: Message     = { id: randomId(), role: "user", content: text };
+    const assistantId          = randomId();
     const assistantMsg: Message = {
       id: assistantId, role: "assistant", content: "", toolCalls: [], streaming: true,
     };
