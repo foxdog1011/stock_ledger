@@ -65,19 +65,19 @@ def _post_discord(text: str) -> None:
 def _gather_data() -> dict:
     data: dict = {}
     try:
-        data["snapshot"]  = _api("/portfolio/snapshot")
+        data["snapshot"]  = _api("/api/equity/snapshot")
     except Exception as e:
         data["snapshot"]  = {"error": str(e)}
     try:
-        data["positions"] = _api("/positions")
+        data["positions"] = _api("/api/positions")
     except Exception as e:
         data["positions"] = {"error": str(e)}
     try:
-        data["risk"]      = _api("/risk/metrics")
+        data["risk"]      = _api("/api/risk/metrics")
     except Exception as e:
         data["risk"]      = {"error": str(e)}
     try:
-        data["perf"]      = _api("/perf/summary")
+        data["perf"]      = _api("/api/perf/summary")
     except Exception as e:
         data["perf"]      = {"error": str(e)}
     return data
