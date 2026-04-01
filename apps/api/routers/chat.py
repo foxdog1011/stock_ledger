@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from typing import Any, Generator
 
 import httpx
-from anthropic import Anthropic
+from openai import OpenAI
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -391,21 +391,30 @@ def _mcp_call(name: str, arguments: dict) -> Any:
         return {"error": str(exc), "tool": name}
 
 
-def _fetch_mcp_tools() -> list[dict]:
-    """Fetch available tools from MCP server, converted to Anthropic tool format."""
-    try:
-        data = _mcp_post({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
-        tools = data.get("result", {}).get("tools", [])
-        return [
-            {
+def _to_openai_tools(tools: list[dict]) -> list[dict]:
+    """Convert Anthropic-style tool defs (input_schema) to OpenAI function format."""
+    result = []
+    for t in tools:
+        params = t.get("input_schema") or t.get("inputSchema") or {"type": "object", "properties": {}}
+        result.append({
+            "type": "function",
+            "function": {
                 "name": t["name"],
                 "description": t.get("description", ""),
-                "input_schema": t.get("inputSchema", {"type": "object", "properties": {}}),
-            }
-            for t in tools
-        ]
+                "parameters": params,
+            },
+        })
+    return result
+
+
+def _fetch_mcp_tools() -> list[dict]:
+    """Fetch available tools from MCP server, converted to OpenAI function format."""
+    try:
+        data = _mcp_post({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+        raw = data.get("result", {}).get("tools", [])
+        return _to_openai_tools(raw)
     except Exception:
-        return TOOLS  # fallback to hardcoded tools if MCP is unavailable
+        return _to_openai_tools(TOOLS)  # fallback to hardcoded tools if MCP is unavailable
 
 
 def _run_research_tool(name: str, input_: dict) -> Any:
@@ -591,13 +600,13 @@ def _stream_chat(
     page_context: str = "",
     session_id: str | None = None,
 ) -> Generator[str, None, None]:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        yield _sse_event({"type": "error", "text": "ANTHROPIC_API_KEY is not configured on the server."})
+        yield _sse_event({"type": "error", "text": "OPENAI_API_KEY is not configured on the server."})
         return
 
     try:
-        client = Anthropic(api_key=api_key)
+        client = OpenAI(api_key=api_key)
         system = SYSTEM_PROMPT.format(
             today=date.today().isoformat(),
             page_label=page_context or "unknown page",
@@ -611,59 +620,73 @@ def _stream_chat(
             current_messages = list(messages)
 
         available_tools = _fetch_mcp_tools()
+        system_msg = {"role": "system", "content": system}
 
         # ── Agentic loop: run tool calls until the model stops requesting them ──
         while True:
-            response = client.messages.create(
-                model="claude-opus-4-6",
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
                 max_tokens=2048,
-                system=system,
                 tools=available_tools,
-                messages=current_messages,
+                messages=[system_msg] + current_messages,
             )
 
-            if response.stop_reason != "tool_use":
+            choice = response.choices[0]
+            if choice.finish_reason != "tool_calls":
                 break
 
-            current_messages.append({"role": "assistant", "content": response.content})
+            assistant_msg = choice.message
+            tool_calls = assistant_msg.tool_calls or []
 
-            tool_blocks = [b for b in response.content if b.type == "tool_use"]
-            for block in tool_blocks:
-                yield _sse_event({"type": "tool_call", "name": block.name})
-
-            # Run all tool calls for this turn in parallel
-            tool_results: list[dict] = [{}] * len(tool_blocks)
-
-            def _call(idx_block: tuple[int, Any]) -> tuple[int, Any]:
-                idx, block = idx_block
-                try:
-                    return idx, _run_tool(block.name, block.input, ledger)
-                except Exception as exc:
-                    return idx, {"error": str(exc)}
-
-            with ThreadPoolExecutor(max_workers=min(len(tool_blocks), 6)) as pool:
-                futures = {pool.submit(_call, (i, b)): i for i, b in enumerate(tool_blocks)}
-                for future in as_completed(futures):
-                    idx, result = future.result()
-                    tool_results[idx] = {
-                        "type": "tool_result",
-                        "tool_use_id": tool_blocks[idx].id,
-                        "content": json.dumps(result, default=str),
+            # Append assistant turn (with tool_calls) to history
+            current_messages.append({
+                "role": "assistant",
+                "content": assistant_msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                     }
+                    for tc in tool_calls
+                ],
+            })
 
-            current_messages.append({"role": "user", "content": tool_results})
+            for tc in tool_calls:
+                yield _sse_event({"type": "tool_call", "name": tc.function.name})
+
+            # Run all tool calls in parallel
+            def _call(tc: Any) -> tuple[str, str, Any]:
+                try:
+                    args = json.loads(tc.function.arguments)
+                    result = _run_tool(tc.function.name, args, ledger)
+                except Exception as exc:
+                    result = {"error": str(exc)}
+                return tc.id, tc.function.name, result
+
+            with ThreadPoolExecutor(max_workers=min(len(tool_calls), 6)) as pool:
+                futures = [pool.submit(_call, tc) for tc in tool_calls]
+                for future in as_completed(futures):
+                    tc_id, tc_name, result = future.result()
+                    current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": json.dumps(result, default=str),
+                    })
 
         # ── Stream the final text response ──
-        with client.messages.stream(
-            model="claude-opus-4-6",
+        stream = client.chat.completions.create(
+            model="gpt-4o-mini",
             max_tokens=2048,
-            system=system,
-            messages=current_messages,
-        ) as stream:
-            for text in stream.text_stream:
-                yield _sse_event({"type": "text", "text": text})
+            messages=[system_msg] + current_messages,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield _sse_event({"type": "text", "text": delta.content})
 
-        # Persist new messages to memory
+        # Persist new messages to memory (user + assistant text only)
         if session_id:
             _save_messages(session_id, list(messages))
 
