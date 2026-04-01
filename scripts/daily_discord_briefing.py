@@ -22,7 +22,7 @@ from datetime import date
 from pathlib import Path
 
 import httpx
-from anthropic import Anthropic
+from openai import OpenAI
 
 # ---------------------------------------------------------------------------
 # Config
@@ -88,9 +88,9 @@ def _gather_data() -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("[briefing] ERROR: ANTHROPIC_API_KEY not set", file=sys.stderr)
+        print("[briefing] ERROR: OPENAI_API_KEY not set", file=sys.stderr)
         sys.exit(1)
 
     today = date.today().isoformat()
@@ -110,14 +110,14 @@ Write a concise morning briefing (max 400 words) for the portfolio owner. Includ
 Be direct and use numbers. Format for Discord (no markdown headers, use emoji sparingly).
 Start with "📊 Morning Briefing — {today}"."""
 
-    client = Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
     print("[briefing] Asking J.A.R.V.I.S. to generate briefing...")
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
         max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )
-    briefing = response.content[0].text
+    briefing = response.choices[0].message.content
 
     print("[briefing] Posting to Discord...")
     _post_discord(briefing)
