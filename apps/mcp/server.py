@@ -49,6 +49,12 @@ def _ledger(db_path: str = DB_PATH):
     return StockLedger(db_path)
 
 
+def _positions_dict(ledger, as_of=None) -> dict:
+    """Return positions keyed by symbol from all_positions_pnl list."""
+    rows = ledger.all_positions_pnl(as_of=as_of, open_only=False)
+    return {row["symbol"]: row for row in rows}
+
+
 # ===========================================================================
 # READ TOOLS
 # ===========================================================================
@@ -76,7 +82,7 @@ def get_portfolio_snapshot(as_of: str | None = None) -> dict[str, Any]:
     """
     try:
         ledger = _ledger()
-        positions = ledger.positions_with_pnl(as_of=as_of)
+        positions = _positions_dict(ledger, as_of=as_of)
         bal = ledger.cash_balance(as_of=as_of)
         mv = sum(
             p["market_value"]
@@ -114,7 +120,7 @@ def get_positions(
     """
     try:
         ledger = _ledger()
-        raw = ledger.positions_with_pnl(as_of=as_of)
+        raw = _positions_dict(ledger, as_of=as_of)
         if not include_closed:
             raw = {
                 sym: data
@@ -453,7 +459,7 @@ def get_rebalance_check(as_of: str | None = None) -> dict[str, Any]:
     """
     try:
         ledger = _ledger()
-        positions = ledger.positions_with_pnl(as_of=as_of)
+        positions = _positions_dict(ledger, as_of=as_of)
         cash = ledger.cash_balance(as_of=as_of)
 
         mv = sum(
