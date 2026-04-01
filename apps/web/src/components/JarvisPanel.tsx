@@ -39,8 +39,15 @@ const LS_KEY = "jarvis_messages";
 const SESSION_KEY = "jarvis_session_id";
 
 function randomId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch { /* non-secure context (HTTP) */ }
+  const arr = new Uint8Array(8);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+    return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
   }
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }

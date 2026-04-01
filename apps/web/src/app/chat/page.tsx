@@ -7,6 +7,22 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function randomId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch { /* non-secure context (HTTP) */ }
+  const arr = new Uint8Array(8);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+    return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ToolCall = { name: string };
@@ -153,11 +169,11 @@ export default function ChatPage() {
       if (!text.trim() || loading) return;
 
       const userMsg: Message = {
-        id: crypto.randomUUID(),
+        id: randomId(),
         role: "user",
         content: text,
       };
-      const assistantId = crypto.randomUUID();
+      const assistantId = randomId();
       const assistantMsg: Message = {
         id: assistantId,
         role: "assistant",
