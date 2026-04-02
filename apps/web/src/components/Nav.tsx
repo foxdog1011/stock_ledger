@@ -14,6 +14,7 @@ const primaryLinks = [
   { href: "/chip",        label: "籌碼" },
   { href: "/positions",   label: "持倉" },
   { href: "/research",    label: "研究" },
+  { href: "/stock",       label: "個股深研" },
   { href: "/chat",        label: "J.A.R.V.I.S." },
 ] as const;
 

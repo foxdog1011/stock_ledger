@@ -1053,3 +1053,108 @@ export interface ResearchSupplyChainResponse {
   downstream: { entity: string; roleNote: string | null }[];
   relatedCompanies: { ticker: string; name: string; industry: string | null }[];
 }
+
+// ── Deep Dive ─────────────────────────────────────────────────────────────────
+
+export interface DeepDiveCompany {
+  ticker: string;
+  name: string;
+  sector: string | null;
+  industry: string | null;
+  market_cap: number | null;
+  description: string | null;
+}
+
+export interface DeepDiveSupplyChainNode {
+  ticker: string;
+  name: string;
+  role_note: string | null;
+}
+
+export interface DeepDiveSupplyChain {
+  upstream: DeepDiveSupplyChainNode[];
+  downstream: DeepDiveSupplyChainNode[];
+}
+
+export interface DeepDivePosition {
+  symbol: string;
+  qty: number;
+  avg_cost: number;
+  last_price: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+}
+
+export interface DeepDivePriceBar {
+  date: string;
+  close: number;
+}
+
+export interface DeepDivePrice {
+  current: number;
+  ma20: number | null;
+  ma60: number | null;
+  rsi: number | null;
+  dates: string[];
+  closes: number[];
+}
+
+export interface DeepDiveRevenueItem {
+  year_month: string;
+  revenue: number;
+  yoy_pct: number | null;
+  mom_pct: number | null;
+}
+
+export interface DeepDiveRevenue {
+  data: DeepDiveRevenueItem[];
+  trend: "accelerating" | "decelerating" | "stable";
+}
+
+export interface DeepDiveInstitutionalItem {
+  date: string;
+  foreign_net: number;
+  trust_net: number;
+  dealer_net: number;
+  total_net: number;
+}
+
+export interface DeepDiveInstitutional {
+  data: DeepDiveInstitutionalItem[];
+}
+
+export interface DeepDiveMarginItem {
+  date: string;
+  margin_balance: number;
+  short_balance: number;
+}
+
+export interface DeepDiveMargin {
+  data: DeepDiveMarginItem[];
+}
+
+export interface DeepDiveAIAnalysis {
+  overall_score: number;
+  buy_signal: boolean;
+  theme_analysis: string;
+  fundamental_analysis: string;
+  timing_analysis: string;
+  risks: string[];
+  summary: string;
+  error?: string;
+}
+
+export interface DeepDiveData {
+  symbol: string;
+  company: DeepDiveCompany | null;
+  themes: string[];
+  supply_chain: DeepDiveSupplyChain | null;
+  position: DeepDivePosition | null;
+  watchlists: string[];
+  price: DeepDivePrice | null;
+  revenue: DeepDiveRevenue | null;
+  institutional: DeepDiveInstitutional | null;
+  margin: DeepDiveMargin | null;
+  anomalies: Record<string, unknown>[];
+  catalysts: Record<string, unknown>[];
+}

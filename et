@@ -1,0 +1,177 @@
+[1mdiff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml[m
+[1mnew file mode 100644[m
+[1mindex 0000000..ba5d5ed[m
+[1m--- /dev/null[m
+[1m+++ b/.github/workflows/ci.yml[m
+[36m@@ -0,0 +1,149 @@[m
+[32m+[m[32mname: CI[m
+[32m+[m
+[32m+[m[32mon:[m
+[32m+[m[32m  push:[m
+[32m+[m[32m    branches: [main][m
+[32m+[m[32m  pull_request:[m
+[32m+[m[32m    branches: [main][m
+[32m+[m
+[32m+[m[32mjobs:[m
+[32m+[m
+[32m+[m[32m  # ── 1. Backend unit tests ───────────────────────────────────────────────────[m
+[32m+[m[32m  backend:[m
+[32m+[m[32m    name: Backend Tests[m
+[32m+[m[32m    runs-on: ubuntu-latest[m
+[32m+[m
+[32m+[m[32m    steps:[m
+[32m+[m[32m      - uses: actions/checkout@v4[m
+[32m+[m
+[32m+[m[32m      - name: Set up Python 3.11[m
+[32m+[m[32m        uses: actions/setup-python@v5[m
+[32m+[m[32m        with:[m
+[32m+[m[32m          python-version: "3.11"[m
+[32m+[m[32m          cache: pip[m
+[32m+[m[32m          cache-dependency-path: apps/api/requirements.txt[m
+[32m+[m
+[32m+[m[32m      - name: Install dependencies[m
+[32m+[m[32m        run: pip install -r apps/api/requirements.txt pytest[m
+[32m+[m
+[32m+[m[32m      - name: Run tests[m
+[32m+[m[32m        run: python -m pytest tests/ -v --tb=short[m
+[32m+[m
+[32m+[m[32m  # ── 2. Frontend lint ────────────────────────────────────────────────────────[m
+[32m+[m[32m  # Relies on "lint": "next lint" confirmed in apps/web/package.json[m
+[32m+[m[32m  frontend-lint:[m
+[32m+[m[32m    name: Frontend Lint[m
+[32m+[m[32m    runs-on: ubuntu-latest[m
+[32m+[m
+[32m+[m[32m    defaults:[m
+[32m+[m[32m      run:[m
+[32m+[m[32m        working-directory: apps/web[m
+[32m+[m
+[32m+[m[32m    steps:[m
+[32m+[m[32m      - uses: actions/checkout@v4[m
+[32m+[m
+[32m+[m[32m      - name: Set up Node 20[m
+[32m+[m[32m        uses: actions/setup-node@v4[m
+[32m+[m[32m        with:[m
+[32m+[m[32m          node-version: "20"[m
+[32m+[m[32m          cache: npm[m
+[32m+[m[32m          cache-dependency-path: apps/web/package-lock.json[m
+[32m+[m
+[32m+[m[32m      - name: Install dependencies[m
+[32m+[m[32m        run: npm ci[m
+[32m+[m
+[32m+[m[32m      - name: ESLint[m
+[32m+[m[32m        run: npm run lint[m
+[32m+[m
+[32m+[m[32m  # ── 3. TypeScript type-check ────────────────────────────────────────────────[m
+[32m+[m[32m  # Uses npx tsc --noEmit directly.[m
+[32m+[m[32m  # tsconfig.json confirms: "noEmit": true, "strict": true.[m
+[32m+[m[32m  # See also: apps/web/package.json "type-check" script.[m
+[32m+[m[32m  frontend-typecheck:[m
+[32m+[m[32m    name: TypeScript Check[m
+[32m+[m[32m    runs-on: ubuntu-latest[m
+[32m+[m
+[32m+[m[32m    defaults:[m
+[32m+[m[32m      run:[m
+[32m+[m[32m        working-directory: apps/web[m
+[32m+[m
+[32m+[m[32m    steps:[m
+[32m+[m[32m      - uses: actions/checkout@v4[m
+[32m+[m
+[32m+[m[32m      - name: Set up Node 20[m
+[32m+[m[32m        uses: actions/setup-node@v4[m
+[32m+[m[32m        with:[m
+[32m+[m[32m          node-version: "20"[m
+[32m+[m[32m          cache: npm[m
+[32m+[m[32m          cache-dependency-path: apps/web/package-lock.json[m
+[32m+[m
+[32m+[m[32m      - name: Install dependencies[m
+[32m+[m[32m        run: npm ci[m
+[32m+[m
+[32m+[m[32m      - name: Type check[m
+[32m+[m[32m        run: npm run type-check[m
+[32m+[m
+[32m+[m[32m  # ── 4. Ledger smoke test ────────────────────────────────────────────────────[m
+[32m+[m[32m  # Runs in-process against a temporary SQLite file. No server needed.[m
+[32m+[m[32m  # API signatures verified against ledger/ledger.py.[m
+[32m+[m[32m  smoke:[m
+[32m+[m[32m    name: Ledger Smoke[m
+[32m+[m[32m    runs-on: ubuntu-latest[m
+[32m+[m[32m    needs: backend[m
+[32m+[m
+[32m+[m[32m    steps:[m
+[32m+[m[32m      - uses: actions/checkout@v4[m
+[32m+[m
+[32m+[m[32m      - name: Set up Python 3.11[m
+[32m+[m[32m        uses: actions/setup-python@v5[m
+[32m+[m[32m        with:[m
+[32m+[m[32m          python-version: "3.11"[m
+[32m+[m[32m          cache: pip[m
+[32m+[m[32m          cache-dependency-path: apps/api/requirements.txt[m
+[32m+[m
+[32m+[m[32m      - name: Install dependencies[m
+[32m+[m[32m        run: pip install -r apps/api/requirements.txt[m
+[32m+[m
+[32m+[m[32m      - name: Smoke test[m
+[32m+[m[32m        run: |[m
+[32m+[m[32m          python - <<'EOF'[m
+[32m+[m[32m          import sys, tempfile[m
+[32m+[m[32m          from pathlib import Path[m
+[32m+[m
+[32m+[m[32m          sys.path.insert(0, str(Path(".").resolve()))[m
+[32m+[m[32m          from ledger import StockLedger[m
+[32m+[m
+[32m+[m[32m          with tempfile.TemporaryDirectory() as d:[m
+[32m+[m[32m              l = StockLedger(db_path=Path(d) / "smoke.db")[m
+[32m+[m
+[32m+[m[32m              # Cash[m
+[32m+[m[32m              l.add_cash(100_000, "2024-01-01")[m
+[32m+[m[32m              bal = l.cash_balance("2024-01-01")[m
+[32m+[m[32m              assert bal == 100_000, f"cash balance wrong: {bal}"[m
+[32m+[m
+[32m+[m[32m              # Buy[m
+[32m+[m[32m              l.add_trade("AAPL", "buy", 10, 150.0, "2024-01-02")[m
+[32m+[m[32m              pos = l.position("AAPL")[m
+[32m+[m[32m              assert pos == 10, f"position wrong after buy: {pos}"[m
+[32m+[m
+[32m+[m[32m              # Partial sell[m
+[32m+[m[32m              l.add_trade("AAPL", "sell", 4, 160.0, "2024-01-03")[m
+[32m+[m[32m              pos = l.position("AAPL")[m
+[32m+[m[32m              assert pos == 6, f"position wrong after partial sell: {pos}"[m
+[32m+[m
+[32m+[m[32m              # Oversell must raise[m
+[32m+[m[32m              try:[m
+[32m+[m[32m                  l.add_trade("AAPL", "sell", 100, 160.0, "2024-01-04")[m
+[32m+[m[32m                  raise AssertionError("oversell should have raised ValueError")[m
+[32m+[m[32m              except ValueError:[m
+[32m+[m[32m                  pass  # expected[m
+[32m+[m
+[32m+[m[32m              # Cash insufficient for buy must raise[m
+[32m+[m[32m              try:[m
+[32m+[m[32m                  l.add_trade("TSLA", "buy", 99999, 999.0, "2024-01-05")[m
+[32m+[m[32m                  raise AssertionError("cash-short buy should have raised ValueError")[m
+[32m+[m[32m              except ValueError:[m
+[32m+[m[32m                  pass  # expected[m
+[32m+[m
+[32m+[m[32m          print("smoke: all assertions passed")[m
+[32m+[m[32m          EOF[m
+[1mdiff --git a/apps/api/routers/export_import.py b/apps/api/routers/export_import.py[m
+[1mindex 52da706..5396e70 100644[m
+[1m--- a/apps/api/routers/export_import.py[m
+[1m+++ b/apps/api/routers/export_import.py[m
+[36m@@ -123,7 +123,10 @@[m [masync def import_trades([m
+     content = await file.read()[m
+     rows = _parse_csv(content)[m
+     required = {"date", "symbol", "side", "qty", "price"}[m
+[31m-    inserted = skipped = 0[m
+[32m+[m[32m    inserted = 0[m
+[32m+[m[32m    # skipped is reserved for future duplicate-detection logic; currently always 0[m
+[32m+[m[32m    # because every row is either inserted or appended to errors with no third path.[m
+[32m+[m[32m    skipped = 0[m
+     errors: list[dict] = [][m
+ [m
+     for i, row in enumerate(rows, start=2):[m
+[36m@@ -174,7 +177,6 @@[m [masync def import_trades([m
+             except Exception as exc:[m
+                 errors.append({"row": i, "message": str(exc), "raw": str(row)})[m
+ [m
+[31m-    skipped = len(rows) - inserted - len(errors)[m
+     return {"ok": len(errors) == 

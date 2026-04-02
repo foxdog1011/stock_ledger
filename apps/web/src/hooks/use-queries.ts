@@ -1011,3 +1011,22 @@ export function useResearchSupplyChainTree(ticker: string | null, depth = 2) {
     staleTime: 10 * 60 * 1000,
   });
 }
+
+// ── Deep Dive ─────────────────────────────────────────────────────────────────
+import type { DeepDiveData, DeepDiveAIAnalysis } from "@/lib/types";
+
+export function useDeepDive(symbol: string | null) {
+  return useQuery<DeepDiveData>({
+    queryKey: ["deepDive", symbol],
+    queryFn: () => fetch(urls.deepDive(symbol!)).then(r => r.json()),
+    enabled: !!symbol,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+}
+
+export function useDeepDiveAIMutation() {
+  return useMutation<DeepDiveAIAnalysis, Error, string>({
+    mutationFn: (symbol: string) =>
+      fetch(urls.deepDiveAI(symbol)).then(r => r.json()),
+  });
+}

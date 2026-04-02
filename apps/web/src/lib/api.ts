@@ -357,6 +357,10 @@ export const urls = {
   researchThemeSupplyChain:    (theme: string) => url(`/api/research/theme/${encodeURIComponent(theme)}/supply-chain`),
   researchSearch:              (q: string, limit?: number) =>
     url(`/api/research/search${qs({ q, limit: limit != null ? String(limit) : undefined })}`),
+
+  // Deep Dive
+  deepDive:   (symbol: string) => url(`/api/deep-dive/${encodeURIComponent(symbol)}`),
+  deepDiveAI: (symbol: string) => url(`/api/deep-dive/${encodeURIComponent(symbol)}/ai-analysis`),
 } as const;
 
 // ── Multipart upload helper ───────────────────────────────────────────────────
