@@ -12,11 +12,11 @@ from typing import Any, Generator
 
 import httpx
 from openai import OpenAI
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ..config import DB_PATH as _CONFIG_DB_PATH
+from ..config import DB_PATH as _CONFIG_DB_PATH, JARVIS_KEY as _JARVIS_KEY
 from ..deps import get_ledger
 from ledger import StockLedger
 
@@ -710,8 +710,14 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat/stream")
-def chat_stream(body: ChatRequest, ledger: StockLedger = Depends(get_ledger)):
+def chat_stream(
+    body: ChatRequest,
+    ledger: StockLedger = Depends(get_ledger),
+    x_jarvis_key: str | None = Header(default=None),
+):
     """SSE endpoint: streams tool-call events then the final text response."""
+    if _JARVIS_KEY and x_jarvis_key != _JARVIS_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing J.A.R.V.I.S. access key")
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     session_id = body.session_id or None
     return StreamingResponse(

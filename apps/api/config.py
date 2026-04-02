@@ -33,3 +33,7 @@ DB_PATH: Path = Path(os.getenv("DB_PATH", "data/ledger.db"))
 QUOTE_PROVIDER: str = os.getenv("QUOTE_PROVIDER", "auto")
 
 AUTO_REFRESH_QUOTES_ON_TRADE: bool = os.getenv("AUTO_REFRESH_QUOTES_ON_TRADE", "1") != "0"
+
+# Optional access key for J.A.R.V.I.S. chat. If set, requests must include
+# X-Jarvis-Key header matching this value. Leave empty to allow open access.
+JARVIS_KEY: str = os.getenv("JARVIS_KEY", "")

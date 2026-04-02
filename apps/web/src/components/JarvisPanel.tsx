@@ -37,6 +37,17 @@ const TOOL_LABELS: Record<string, string> = {
 const WRITE_TOOLS = new Set(["add_trade", "add_cash"]);
 const LS_KEY = "jarvis_messages";
 const SESSION_KEY = "jarvis_session_id";
+const JARVIS_KEY_LS = "jarvis_access_key";
+
+function getStoredKey(): string {
+  try { return localStorage.getItem(JARVIS_KEY_LS) ?? ""; } catch { return ""; }
+}
+function storeKey(k: string): void {
+  try { localStorage.setItem(JARVIS_KEY_LS, k); } catch { /* ignore */ }
+}
+function clearKey(): void {
+  try { localStorage.removeItem(JARVIS_KEY_LS); } catch { /* ignore */ }
+}
 
 function randomId(): string {
   try {
@@ -161,6 +172,9 @@ function JarvisMessage({ msg }: { msg: Message }) {
 
 export function JarvisPanel() {
   const [open, setOpen]       = useState(false);
+  const [accessKey, setAccessKey] = useState<string>(() => getStoredKey());
+  const [keyInput, setKeyInput]   = useState("");
+  const [keyError, setKeyError]   = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -229,7 +243,10 @@ export function JarvisPanel() {
     try {
       const res = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessKey ? { "X-Jarvis-Key": accessKey } : {}),
+        },
         body: JSON.stringify({
           messages: history,
           page_context: resolvePageLabel(),
@@ -237,6 +254,17 @@ export function JarvisPanel() {
         }),
       });
 
+      if (res.status === 401) {
+        clearKey();
+        setAccessKey("");
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId
+            ? { ...m, content: "⚠ Access denied. Please enter your J.A.R.V.I.S. key.", streaming: false }
+            : m,
+        ));
+        setLoading(false);
+        return;
+      }
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
       const reader  = res.body.getReader();
@@ -354,6 +382,15 @@ export function JarvisPanel() {
           </div>
 
           <div className="flex items-center gap-2">
+            {accessKey && (
+              <button
+                onClick={() => { clearKey(); setAccessKey(""); setMessages([]); }}
+                title="Lock J.A.R.V.I.S."
+                className="text-zinc-600 hover:text-zinc-400 transition-colors text-[10px] px-1.5 py-0.5 border border-zinc-700 rounded"
+              >
+                Lock
+              </button>
+            )}
             {messages.length > 0 && (
               <button
                 onClick={() => {
@@ -378,8 +415,48 @@ export function JarvisPanel() {
           </div>
         </div>
 
+        {/* Key lock screen */}
+        {!accessKey && (
+          <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4">
+            <div className="text-center space-y-1">
+              <p className="text-sm font-semibold text-zinc-200">Access Required</p>
+              <p className="text-xs text-zinc-500">Enter your J.A.R.V.I.S. access key to continue.</p>
+            </div>
+            <form
+              className="w-full flex flex-col gap-2"
+              onSubmit={e => {
+                e.preventDefault();
+                if (!keyInput.trim()) return;
+                storeKey(keyInput.trim());
+                setAccessKey(keyInput.trim());
+                setKeyInput("");
+                setKeyError(false);
+              }}
+            >
+              <input
+                type="password"
+                value={keyInput}
+                onChange={e => { setKeyInput(e.target.value); setKeyError(false); }}
+                placeholder="Enter access key…"
+                className={cn(
+                  "w-full bg-zinc-900 border rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600",
+                  "focus:outline-none focus:border-cyan-700 transition-colors",
+                  keyError ? "border-red-600" : "border-zinc-800",
+                )}
+              />
+              {keyError && <p className="text-xs text-red-400">Incorrect key. Try again.</p>}
+              <button
+                type="submit"
+                className="w-full py-2 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 text-white text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                Unlock
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className={cn("flex-1 overflow-y-auto px-4 py-4", !accessKey && "hidden")}>
           {messages.length === 0 ? (
             <div className="space-y-5 pt-2">
               <div className="text-center space-y-1">
@@ -414,7 +491,7 @@ export function JarvisPanel() {
         </div>
 
         {/* Input */}
-        <div className="flex-shrink-0 border-t border-zinc-800 px-4 py-3 space-y-2">
+        <div className={cn("flex-shrink-0 border-t border-zinc-800 px-4 py-3 space-y-2", !accessKey && "hidden")}>
           <form
             className="flex gap-2"
             onSubmit={e => { e.preventDefault(); sendMessage(input); }}
