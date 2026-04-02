@@ -61,39 +61,41 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ## Architecture
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│  Next.js 15  ·  TypeScript  ·  TanStack Query v5  ·  shadcn   │
-│  /overview /portfolio /positions /lots /universe /catalyst     │
-│  /digest /offsetting /ledger /monitor /operations             │
-│  /allocation /chip /revenue /rolling /screener  …             │
-│                                                                │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  J.A.R.V.I.S. floating panel  (Ctrl+J, any page)        │  │
-│  │  SSE streaming · tool-call badges · page-context aware   │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└──────────────────────────┬────────────────────────────────────┘
-                           │  HTTP  (server-side proxy, no CORS)
-┌──────────────────────────▼────────────────────────────────────┐
-│  FastAPI  ·  40+ endpoints  ·  21 routers                      │
-│  APScheduler  (daily quote refresh @ 18:00 Asia/Taipei)        │
-│  BackgroundTasks  (auto-refresh on every trade POST)           │
-│                                                                │
-│  POST /api/chat/stream ──► Anthropic Claude API                │
-│    agentic loop: tool_use → execute → tool_result → stream     │
-│                                                                │
-│  GET /api/anomaly/batch ──► analysis/ (PCA Autoencoder)        │
-│    6-feature time-series → reconstruction error → anomalies    │
-│                                                                │
-│  GET /api/chart/{symbol} ──► yfinance (MA/RSI/KD)             │
-│    fetches directly; supports US + Taiwan (.TW/.TWO)           │
-└──────┬──────────────────┬──────────────────┬──────────────────┘
-       │                  │                  │
-  domain/ layer      ledger/ library    providers/
-  (DDD services)     (pure Python core)  TWSE · FinMind · Yahoo
-       │                  │              yfinance (chart + anomaly)
-       └──────────────────┴──── SQLite  (Docker named volume)
+```mermaid
+graph TD
+    subgraph FE["Frontend — Next.js 15 · TypeScript · shadcn (port 3001)"]
+        WEB["20 pages\n/overview · /portfolio · /positions · /monitor · /universe …"]
+        JARVIS["J.A.R.V.I.S. floating panel\nCtrl+J · SSE streaming · page-context aware"]
+    end
+
+    subgraph BE["Backend — FastAPI · 40+ endpoints · APScheduler (port 8000)"]
+        API["21 routers\nAuto quote refresh @ 18:00 Asia/Taipei"]
+        CHAT["POST /api/chat/stream\nagentic loop: tool_use → execute → stream"]
+        ANOMALY["GET /api/anomaly/batch\nPCA autoencoder · Z-score · 6-feature time-series"]
+    end
+
+    subgraph CORE["Core Python (no web deps)"]
+        DOMAIN["domain/ — DDD services\nrisk · portfolio · overview · execution · universe …"]
+        LEDGER["ledger/ — pure Python library\nStockLedger · equity_curve · migrations"]
+        DB[("SQLite\nDocker named volume\nledger_data")]
+    end
+
+    subgraph EXT["External"]
+        CLAUDE["Claude claude-opus-4-6\nAnthropic API · tool use"]
+        PCA["scikit-learn PCA\nlinear autoencoder"]
+        PROVIDERS["Price Providers\nTWSE · FinMind · Yahoo Finance"]
+        MCP["MCP Server\nport 8001 · stdio · 21 tools\nClaude Desktop · any MCP client"]
+    end
+
+    WEB -- "HTTP proxy (no CORS)" --> API
+    JARVIS -- "SSE" --> CHAT
+    CHAT --> CLAUDE
+    ANOMALY --> PCA
+    API --> DOMAIN
+    API --> PROVIDERS
+    DOMAIN --> LEDGER
+    LEDGER --> DB
+    MCP --> DB
 ```
 
 ### Key Design Decisions
