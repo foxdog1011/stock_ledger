@@ -90,14 +90,30 @@ jobs:
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
           IMAGE_TAG: ${{ github.sha }}
           AWS_REGION: ${{ env.AWS_REGION }}
+          JARVIS_KEY: ${{ secrets.JARVIS_KEY }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: ECR_REGISTRY,IMAGE_TAG,AWS_REGION
+          envs: ECR_REGISTRY,IMAGE_TAG,AWS_REGION,JARVIS_KEY,FINMIND_TOKEN
           command_timeout: 30m
 
           script: |
+            # Inject secrets into /app/.env (upsert)
+            ENV_FILE=/app/.env
+            touch $ENV_FILE
+            for VAR in JARVIS_KEY FINMIND_TOKEN; do
+              VAL=$(eval echo \$$VAR)
+              if [ -n "$VAL" ]; then
+                if grep -q "^${VAR}=" "$ENV_FILE" 2>/dev/null; then
+                  sed -i "s|^${VAR}=.*|${VAR}=${VAL}|" "$ENV_FILE"
+                else
+                  echo "${VAR}=${VAL}" >> "$ENV_FILE"
+                fi
+              fi
+            done
+
             # Login to ECR
             aws ecr get-login-password --region $AWS_REGION | \
               docker login --username AWS --password-stdin $ECR_REGISTRY
