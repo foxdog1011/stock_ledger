@@ -155,7 +155,7 @@ def _fetch_position(symbol: str) -> Optional[dict]:
 
             # Get last known price
             price_row = con.execute(
-                "SELECT close FROM quotes WHERE symbol = ? ORDER BY date DESC LIMIT 1",
+                "SELECT close FROM prices WHERE symbol = ? ORDER BY date DESC LIMIT 1",
                 (symbol,),
             ).fetchone()
 
