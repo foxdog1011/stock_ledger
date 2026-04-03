@@ -50,10 +50,10 @@ def fetch_margin_trading(symbol: str, days: int = 30) -> list[dict]:
                 "date": row.get("date", ""),
                 "margin_buy": int(row.get("MarginPurchaseBuy", 0) or 0),
                 "margin_sell": int(row.get("MarginPurchaseSell", 0) or 0),
-                "margin_balance": int(row.get("MarginPurchaseToday", 0) or 0),
+                "margin_balance": int(row.get("MarginPurchaseTodayBalance", 0) or 0),
                 "short_buy": int(row.get("ShortSaleBuy", 0) or 0),
                 "short_sell": int(row.get("ShortSaleSell", 0) or 0),
-                "short_balance": int(row.get("ShortSaleToday", 0) or 0),
+                "short_balance": int(row.get("ShortSaleTodayBalance", 0) or 0),
             })
 
         return sorted(result, key=lambda x: x["date"])[-days:]

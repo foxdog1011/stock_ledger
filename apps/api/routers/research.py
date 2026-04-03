@@ -98,15 +98,26 @@ def search_companies(
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT ticker, name, industry, description
+            SELECT ticker, name, industry, description,
+                   CASE
+                     WHEN ticker = ?            THEN 0
+                     WHEN ticker LIKE ?         THEN 1
+                     WHEN name   LIKE ?         THEN 2
+                     WHEN industry LIKE ?       THEN 3
+                     ELSE                            4
+                   END AS rank
             FROM research_companies
-            WHERE name LIKE ?
+            WHERE ticker = ?
+               OR ticker LIKE ?
+               OR name LIKE ?
                OR description LIKE ?
                OR industry LIKE ?
-            ORDER BY name
+            ORDER BY rank, name
             LIMIT ?
             """,
-            (keyword, keyword, keyword, limit),
+            (q, keyword, keyword, keyword,
+             q, keyword, keyword, keyword, keyword,
+             limit),
         ).fetchall()
 
     results = []

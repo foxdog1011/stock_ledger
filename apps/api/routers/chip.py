@@ -105,11 +105,13 @@ def _fetch_finmind_chip(symbol: str, date_str: str) -> Optional[dict]:
             "total_net": 0,
         }
 
+        # FinMind v4 returns English investor type names
         name_map = {
-            "外資": "foreign",
-            "外資及陸資": "foreign",
-            "投信": "investment_trust",
-            "自營商": "dealer",
+            "Foreign_Investor": "foreign",
+            "Foreign_Dealer_Self": "foreign",
+            "Investment_Trust": "investment_trust",
+            "Dealer_self": "dealer",
+            "Dealer_Hedging": "dealer",
         }
 
         for row in data["data"]:
@@ -117,7 +119,13 @@ def _fetch_finmind_chip(symbol: str, date_str: str) -> Optional[dict]:
             if key:
                 buy = int(row.get("buy", 0) or 0)
                 sell = int(row.get("sell", 0) or 0)
-                result[key] = {"buy": buy, "sell": sell, "net": buy - sell}
+                # Accumulate (Dealer_self + Dealer_Hedging both map to "dealer")
+                existing = result[key]
+                result[key] = {
+                    "buy": existing["buy"] + buy,
+                    "sell": existing["sell"] + sell,
+                    "net": existing["net"] + (buy - sell),
+                }
 
         result["total_net"] = (
             result["foreign"]["net"]
@@ -151,14 +159,16 @@ def _fetch_finmind_chip_bulk(symbol: str, start: str, end: str) -> list[dict]:
         if data.get("status") != 200 or not data.get("data"):
             return []
 
+        # FinMind v4 returns English investor type names
         name_map = {
-            "外資": "foreign",
-            "外資及陸資": "foreign",
-            "投信": "investment_trust",
-            "自營商": "dealer",
+            "Foreign_Investor": "foreign",
+            "Foreign_Dealer_Self": "foreign",
+            "Investment_Trust": "investment_trust",
+            "Dealer_self": "dealer",
+            "Dealer_Hedging": "dealer",
         }
 
-        # Group rows by date
+        # Group rows by date, accumulate buy/sell per investor category
         by_date: dict = {}
         for row in data["data"]:
             d = row.get("date", "")
@@ -176,7 +186,13 @@ def _fetch_finmind_chip_bulk(symbol: str, start: str, end: str) -> list[dict]:
             if key:
                 buy = int(row.get("buy", 0) or 0)
                 sell = int(row.get("sell", 0) or 0)
-                by_date[d][key] = {"buy": buy, "sell": sell, "net": buy - sell}
+                # Accumulate (Dealer_self + Dealer_Hedging both map to "dealer")
+                existing = by_date[d][key]
+                by_date[d][key] = {
+                    "buy": existing["buy"] + buy,
+                    "sell": existing["sell"] + sell,
+                    "net": existing["net"] + (buy - sell),
+                }
 
         # Compute total_net for each date
         results = []
