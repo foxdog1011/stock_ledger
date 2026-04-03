@@ -129,22 +129,92 @@ def _fetch_finmind_chip(symbol: str, date_str: str) -> Optional[dict]:
         return None
 
 
+def _fetch_finmind_chip_bulk(symbol: str, start: str, end: str) -> list[dict]:
+    """Fetch institutional data for a date range from FinMind in a single request."""
+    token = os.getenv("FINMIND_TOKEN", "").strip()
+    if not token:
+        return []
+
+    params = urllib.parse.urlencode({
+        "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+        "data_id": symbol,
+        "start_date": start,
+        "end_date": end,
+        "token": token,
+    })
+    url = f"{_FINMIND_URL}?{params}"
+    try:
+        req = urllib.request.Request(url, headers=_HEADERS)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+
+        if data.get("status") != 200 or not data.get("data"):
+            return []
+
+        name_map = {
+            "外資": "foreign",
+            "外資及陸資": "foreign",
+            "投信": "investment_trust",
+            "自營商": "dealer",
+        }
+
+        # Group rows by date
+        by_date: dict = {}
+        for row in data["data"]:
+            d = row.get("date", "")
+            if d not in by_date:
+                by_date[d] = {
+                    "symbol": symbol,
+                    "date": d,
+                    "source": "FinMind",
+                    "foreign": {"buy": 0, "sell": 0, "net": 0},
+                    "investment_trust": {"buy": 0, "sell": 0, "net": 0},
+                    "dealer": {"buy": 0, "sell": 0, "net": 0},
+                    "total_net": 0,
+                }
+            key = name_map.get(row.get("name", ""))
+            if key:
+                buy = int(row.get("buy", 0) or 0)
+                sell = int(row.get("sell", 0) or 0)
+                by_date[d][key] = {"buy": buy, "sell": sell, "net": buy - sell}
+
+        # Compute total_net for each date
+        results = []
+        for entry in by_date.values():
+            entry["total_net"] = (
+                entry["foreign"]["net"]
+                + entry["investment_trust"]["net"]
+                + entry["dealer"]["net"]
+            )
+            results.append(entry)
+
+        return sorted(results, key=lambda x: x["date"])
+    except Exception:
+        return []
+
+
 def _fetch_chip_range(symbol: str, start: str, end: str) -> list[dict]:
-    """Fetch chip data for a date range. Tries FinMind first (covers OTC), falls back to TWSE."""
+    """Fetch chip data for a date range. Uses FinMind bulk query first, falls back to TWSE day-by-day."""
+    # Try bulk FinMind query first (single request, covers OTC stocks too)
+    results = _fetch_finmind_chip_bulk(symbol, start, end)
+    if results:
+        return results
+
+    # Fallback: TWSE day-by-day (listed stocks only)
     import datetime
-    results = []
+    twse_results = []
     current = datetime.date.fromisoformat(start)
     end_date = datetime.date.fromisoformat(end)
 
     while current <= end_date:
         if current.weekday() < 5:  # weekdays only
             date_str = current.isoformat()
-            row = _fetch_finmind_chip(symbol, date_str) or _fetch_twse_chip(symbol, date_str)
+            row = _fetch_twse_chip(symbol, date_str)
             if row:
-                results.append(row)
+                twse_results.append(row)
         current += datetime.timedelta(days=1)
 
-    return results
+    return twse_results
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
