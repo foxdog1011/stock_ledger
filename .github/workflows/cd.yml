@@ -159,15 +159,19 @@ jobs:
             fi
             df -h /home  # log disk usage after clone
 
-            # Wait for the API container to pass its health check (up to 60s)
-            for i in $(seq 1 12); do
+            # Wait for the API container to pass its health check (up to 120s)
+            for i in $(seq 1 24); do
               if docker exec stock-ledger-api \
                    python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" \
                    2>/dev/null; then
                 echo "API healthy"; break
               fi
-              echo "Waiting for API... ($i/12)"; sleep 5
+              echo "Waiting for API... ($i/24)"; sleep 5
             done
+
+            # Ensure web + mcp are running (they may have failed on first compose up)
+            docker compose up -d --remove-orphans 2>/dev/null || true
+            echo "All containers:" && docker ps -a --format "table {{.Names}}\t{{.Status}}"
 
             # Copy coverage repo into container and run the ingest script
             docker cp /home/ec2-user/My-TW-Coverage stock-ledger-api:/tmp/My-TW-Coverage
