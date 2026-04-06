@@ -1,6 +1,7 @@
 """Performance summary, risk metrics, and attribution endpoints."""
 from __future__ import annotations
 
+import datetime as dt
 import math
 import sqlite3
 
@@ -12,14 +13,24 @@ from ledger import StockLedger
 router = APIRouter()
 
 
+def _default_start() -> str:
+    """Default start: 1 year ago."""
+    return (dt.date.today() - dt.timedelta(days=365)).isoformat()
+
+
+def _default_end() -> str:
+    """Default end: today."""
+    return dt.date.today().isoformat()
+
+
 def _daily_data(ledger: StockLedger, start: str, end: str) -> list[dict]:
     return ledger.daily_equity(start=start, end=end, freq="B")
 
 
 @router.get("/perf/summary", summary="Performance summary for a date range")
 def perf_summary(
-    start: str = Query(..., description="YYYY-MM-DD"),
-    end: str = Query(..., description="YYYY-MM-DD"),
+    start: str = Query(None, description="YYYY-MM-DD (default: 1 year ago)"),
+    end: str = Query(None, description="YYYY-MM-DD (default: today)"),
     ledger: StockLedger = Depends(get_ledger),
 ) -> dict:
     """
@@ -37,6 +48,8 @@ def perf_summary(
     | fees_commission        | commissions paid                                     |
     | fees_tax               | taxes paid                                           |
     """
+    start = start or _default_start()
+    end = end or _default_end()
     daily = _daily_data(ledger, start, end)
     if not daily:
         return {
@@ -99,8 +112,8 @@ def perf_summary(
 
 @router.get("/perf/attribution", summary="Symbol-level PnL attribution for a date range")
 def perf_attribution(
-    start: str = Query(..., description="YYYY-MM-DD"),
-    end: str = Query(..., description="YYYY-MM-DD"),
+    start: str = Query(None, description="YYYY-MM-DD (default: 1 year ago)"),
+    end: str = Query(None, description="YYYY-MM-DD (default: today)"),
     top_n: int = Query(5, ge=1, le=20, description="Number of top/bottom contributors"),
     ledger: StockLedger = Depends(get_ledger),
 ) -> dict:
@@ -112,6 +125,8 @@ def perf_attribution(
     Returns all symbols sorted by contribution (desc), plus
     `top_gainers` (top N) and `top_losers` (bottom N) sub-lists.
     """
+    start = start or _default_start()
+    end = end or _default_end()
     pos_start = {p["symbol"]: p for p in ledger.all_positions_pnl(as_of=start, open_only=False)}
     pos_end   = {p["symbol"]: p for p in ledger.all_positions_pnl(as_of=end,   open_only=False)}
 
@@ -160,8 +175,8 @@ def perf_attribution(
 
 @router.get("/risk/metrics", summary="Risk metrics for a date range")
 def risk_metrics(
-    start: str = Query(..., description="YYYY-MM-DD"),
-    end: str = Query(..., description="YYYY-MM-DD"),
+    start: str = Query(None, description="YYYY-MM-DD (default: 1 year ago)"),
+    end: str = Query(None, description="YYYY-MM-DD (default: today)"),
     ledger: StockLedger = Depends(get_ledger),
 ) -> dict:
     """
@@ -177,6 +192,8 @@ def risk_metrics(
     | avg_daily_return_pct | arithmetic mean of daily returns              |
     | volatility_pct       | std-dev of daily returns                      |
     """
+    start = start or _default_start()
+    end = end or _default_end()
     daily = _daily_data(ledger, start, end)
     returns = [d["daily_return_pct"] for d in daily if d.get("daily_return_pct") is not None]
 

@@ -28,12 +28,33 @@ from .routers import (
     todo, perf, rebalance, export_import, backup, benchmark, risk, execution,
     universe, watchlist, catalyst, overview, chat, alerts, chip, rolling,
     chart, revenue, allocation, screener, anomaly, research, deep_dive,
+    financials, rating, advanced_valuation,
 )
 from .routers import quotes_refresh, digest as digest_router
+from .routers import calendar as calendar_router
 
 logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler()
+
+
+async def _run_scheduled_chip_refresh() -> None:
+    """Daily 17:00 Asia/Taipei — auto-fetch chip data for all portfolio holdings."""
+    try:
+        import datetime
+        ledger = deps.get_ledger()
+        from .routers.chip import _fetch_finmind_chip, _fetch_twse_chip
+        date_str = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+        snap = ledger.equity_snapshot(as_of=date_str)
+        symbols = list(snap.get("positions", {}).keys())
+        fetched = 0
+        for sym in symbols:
+            result = _fetch_finmind_chip(sym, date_str) or _fetch_twse_chip(sym, date_str)
+            if result:
+                fetched += 1
+        logger.info("Scheduled chip refresh: date=%s fetched=%d/%d", date_str, fetched, len(symbols))
+    except Exception:
+        logger.exception("Scheduled chip refresh failed")
 
 
 async def _run_scheduled_refresh() -> None:
@@ -203,6 +224,25 @@ async def lifespan(app: FastAPI):
     from .routers.digest import ensure_digest_table
     ensure_digest_table()
 
+    # Ensure financials tables exist
+    from domain.financials.repository import init_financials_tables
+    init_financials_tables(DB_PATH)
+
+    # Ensure rating + scenario tables exist
+    from domain.rating.repository import init_rating_tables
+    init_rating_tables(DB_PATH)
+
+    # Ensure content calendar table exists
+    from domain.calendar.repository import init_calendar_tables
+    init_calendar_tables(DB_PATH)
+
+    # APScheduler: daily chip data refresh at 17:00 Asia/Taipei
+    _scheduler.add_job(
+        _run_scheduled_chip_refresh,
+        CronTrigger(hour=17, minute=0, timezone=TZ),
+        id="daily_chip_refresh",
+        replace_existing=True,
+    )
     # APScheduler: daily price refresh at 18:00 Asia/Taipei
     _scheduler.add_job(
         _run_scheduled_refresh,
@@ -314,6 +354,10 @@ app.include_router(screener.router,      prefix=PREFIX, tags=["screener"])
 app.include_router(anomaly.router,       prefix=PREFIX, tags=["anomaly"])
 app.include_router(research.router,      prefix="/api/research", tags=["research"])
 app.include_router(deep_dive.router,     prefix=PREFIX, tags=["deep-dive"])
+app.include_router(calendar_router.router,   prefix=PREFIX, tags=["calendar"])
+app.include_router(financials.router,        prefix=PREFIX, tags=["financials"])
+app.include_router(rating.router,            prefix=PREFIX, tags=["rating"])
+app.include_router(advanced_valuation.router, prefix=PREFIX, tags=["valuation"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

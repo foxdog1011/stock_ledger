@@ -12,6 +12,13 @@ FROM python:3.11-slim
 LABEL org.opencontainers.image.title="stock-ledger-api"
 LABEL org.opencontainers.image.description="SQLite-backed portfolio ledger REST API"
 
+# Chinese fonts for matplotlib CJK rendering
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-noto-cjk \
+    fontconfig \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 

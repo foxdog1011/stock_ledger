@@ -1286,6 +1286,446 @@ def get_news(symbol: str, count: int = 5) -> dict[str, Any]:
 
 
 # ===========================================================================
+# Phase 1-3: Financial fundamentals, valuation, rating & advanced tools
+# ===========================================================================
+
+
+@mcp.tool()
+def get_financial_statements(
+    symbol: str,
+    statement_type: str = "income",
+    limit: int = 8,
+) -> dict[str, Any]:
+    """Get quarterly financial statements for a Taiwan stock.
+
+    Returns income statement, balance sheet, or cash flow data grouped by quarter.
+
+    Args:
+        symbol: Taiwan stock ticker (e.g. "2337").
+        statement_type: "income", "balance", or "cashflow".
+        limit: Max number of quarters to return (default 8).
+
+    Returns:
+        Quarterly financial data with fields like 營業收入, 營業利益, 淨利, EPS etc.
+    """
+    try:
+        from domain.financials.repository import get_financial_statements as _get
+        data = _get(DB_PATH, symbol.upper(), statement_type, limit)
+        return {"symbol": symbol.upper(), "type": statement_type, "count": len(data), "data": data}
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_financial_statements"}
+
+
+@mcp.tool()
+def fetch_fundamentals(
+    symbol: str,
+    start_date: str = "2020-01-01",
+) -> dict[str, Any]:
+    """Fetch all fundamental data for a stock from FinMind (one-click).
+
+    Downloads: income statement, balance sheet, cash flow, PER/PBR,
+    dividends. Stores everything in local database for fast querying.
+
+    Args:
+        symbol: Taiwan stock ticker (e.g. "2337").
+        start_date: How far back to fetch (YYYY-MM-DD, default 2020-01-01).
+
+    Returns:
+        Summary of fetched/stored records per data type.
+    """
+    try:
+        import json, os, urllib.parse, urllib.request
+        from domain.financials.repository import (
+            store_financial_rows, store_valuation_rows, store_dividend_rows,
+        )
+
+        sym = symbol.upper()
+        _FM_URL = "https://api.finmindtrade.com/api/v4/data"
+        _HDR = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+        token = os.getenv("FINMIND_TOKEN", "").strip()
+
+        def _fm(dataset: str) -> list[dict]:
+            params: dict = {"dataset": dataset, "data_id": sym, "start_date": start_date}
+            if token:
+                params["token"] = token
+            url = f"{_FM_URL}?{urllib.parse.urlencode(params)}"
+            req = urllib.request.Request(url, headers=_HDR)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                d = json.loads(resp.read())
+            if d.get("status") != 200:
+                raise ValueError(d.get("msg", "unknown"))
+            return d.get("data", [])
+
+        results = {}
+        for st, ds in [("income", "TaiwanStockFinancialStatements"),
+                       ("balance", "TaiwanStockBalanceSheet"),
+                       ("cashflow", "TaiwanStockCashFlowsStatement")]:
+            try:
+                rows = _fm(ds)
+                n = store_financial_rows(DB_PATH, sym, st, rows)
+                results[st] = {"fetched": len(rows), "stored": n}
+            except Exception as e:
+                results[st] = {"error": str(e)}
+
+        try:
+            rows = _fm("TaiwanStockPER")
+            n = store_valuation_rows(DB_PATH, sym, rows)
+            results["valuation"] = {"fetched": len(rows), "stored": n}
+        except Exception as e:
+            results["valuation"] = {"error": str(e)}
+
+        try:
+            rows = _fm("TaiwanStockDividend")
+            n = store_dividend_rows(DB_PATH, sym, rows)
+            results["dividends"] = {"fetched": len(rows), "stored": n}
+        except Exception as e:
+            results["dividends"] = {"error": str(e)}
+
+        return {"symbol": sym, "results": results}
+    except Exception as exc:
+        return {"error": str(exc), "tool": "fetch_fundamentals"}
+
+
+@mcp.tool()
+def get_valuation_metrics(
+    symbol: str,
+    limit: int = 30,
+) -> dict[str, Any]:
+    """Get PER/PBR/dividend yield history with summary statistics.
+
+    Args:
+        symbol: Taiwan stock ticker.
+        limit: Number of recent data points (default 30).
+
+    Returns:
+        Latest and historical PER/PBR with avg/min/max stats.
+    """
+    try:
+        from domain.financials.repository import get_valuation_metrics as _get
+        data = _get(DB_PATH, symbol.upper(), limit)
+        if not data:
+            return {"symbol": symbol.upper(), "count": 0, "data": [], "summary": None}
+
+        pers = [d["per"] for d in data if d["per"] and d["per"] > 0]
+        pbrs = [d["pbr"] for d in data if d["pbr"] and d["pbr"] > 0]
+        return {
+            "symbol": symbol.upper(),
+            "count": len(data),
+            "data": data[:10],
+            "summary": {
+                "latest_per": data[0]["per"],
+                "latest_pbr": data[0]["pbr"],
+                "latest_dividend_yield": data[0]["dividend_yield"],
+                "per_avg": round(sum(pers) / len(pers), 2) if pers else None,
+                "per_min": round(min(pers), 2) if pers else None,
+                "per_max": round(max(pers), 2) if pers else None,
+                "pbr_avg": round(sum(pbrs) / len(pbrs), 2) if pbrs else None,
+            },
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_valuation_metrics"}
+
+
+@mcp.tool()
+def get_dividends(symbol: str) -> dict[str, Any]:
+    """Get dividend history for a Taiwan stock.
+
+    Args:
+        symbol: Taiwan stock ticker.
+
+    Returns:
+        Dividend records with cash/stock amounts and summary stats.
+    """
+    try:
+        from domain.financials.repository import get_dividend_history
+        data = get_dividend_history(DB_PATH, symbol.upper(), 20)
+        total_cash = sum(d["cash_dividend"] or 0 for d in data)
+        return {
+            "symbol": symbol.upper(),
+            "count": len(data),
+            "data": data,
+            "total_cash_dividend": round(total_cash, 2),
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_dividends"}
+
+
+@mcp.tool()
+def get_peer_comparison(
+    symbol: str,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Compare a stock against its industry peers.
+
+    Finds companies in the same industry and compares market cap,
+    PER, PBR, and revenue growth.
+
+    Args:
+        symbol: Taiwan stock ticker.
+        limit: Max peers to return (default 10).
+
+    Returns:
+        Peer list with valuation metrics and industry averages.
+    """
+    try:
+        sym = symbol.upper()
+        with _research_db() as con:
+            target = con.execute(
+                "SELECT ticker, name, sector, industry, market_cap "
+                "FROM research_companies WHERE ticker=?", (sym,),
+            ).fetchone()
+            if not target:
+                return {"error": f"Company {sym} not found in research DB"}
+
+            peers = con.execute(
+                "SELECT r.ticker, r.name, r.market_cap, v.per, v.pbr "
+                "FROM research_companies r "
+                "LEFT JOIN (SELECT symbol, per, pbr FROM valuation_metrics "
+                "  WHERE (symbol, date) IN (SELECT symbol, MAX(date) FROM valuation_metrics GROUP BY symbol)"
+                ") v ON r.ticker = v.symbol "
+                "WHERE r.industry=? ORDER BY r.market_cap DESC LIMIT ?",
+                (target["industry"], limit),
+            ).fetchall()
+
+        return {
+            "symbol": sym,
+            "industry": target["industry"],
+            "peers": [dict(p) for p in peers],
+        }
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_peer_comparison"}
+
+
+@mcp.tool()
+def get_investment_rating(symbol: str) -> dict[str, Any]:
+    """Get the investment rating for a stock (Buy/Hold/Sell + target price).
+
+    Args:
+        symbol: Stock ticker.
+
+    Returns:
+        Rating with target_price, stop_loss, thesis, confidence.
+    """
+    try:
+        from domain.rating.repository import get_rating
+        result = get_rating(DB_PATH, symbol.upper())
+        if not result:
+            return {"symbol": symbol.upper(), "rating": None, "message": "No rating set"}
+        return result
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_investment_rating"}
+
+
+@mcp.tool()
+def set_investment_rating(
+    symbol: str,
+    rating: str,
+    target_price: float | None = None,
+    stop_loss: float | None = None,
+    thesis: str = "",
+    confidence: float = 0.5,
+) -> dict[str, Any]:
+    """Set an investment rating for a stock.
+
+    Args:
+        symbol: Stock ticker.
+        rating: "strong_buy", "buy", "hold", "sell", or "strong_sell".
+        target_price: 12-month target price.
+        stop_loss: Stop-loss price.
+        thesis: Investment thesis text.
+        confidence: Confidence level 0-1 (default 0.5).
+
+    Returns:
+        The saved rating record.
+    """
+    try:
+        from domain.rating.repository import upsert_rating
+        return upsert_rating(
+            DB_PATH, symbol.upper(), rating,
+            target_price=target_price, stop_loss=stop_loss,
+            thesis=thesis, confidence=confidence,
+        )
+    except Exception as exc:
+        return {"error": str(exc), "tool": "set_investment_rating"}
+
+
+@mcp.tool()
+def set_scenario(
+    symbol: str,
+    scenario_name: str,
+    target_price: float,
+    probability: float,
+    thesis: str = "",
+) -> dict[str, Any]:
+    """Set a bull/base/bear quantitative scenario for a stock.
+
+    Args:
+        symbol: Stock ticker.
+        scenario_name: e.g. "bull", "base", "bear".
+        target_price: Target price for this scenario.
+        probability: Probability 0-1.
+        thesis: Scenario description.
+
+    Returns:
+        The saved scenario record.
+    """
+    try:
+        from domain.rating.repository import upsert_scenario_q
+        return upsert_scenario_q(DB_PATH, symbol.upper(), scenario_name, target_price, probability, thesis)
+    except Exception as exc:
+        return {"error": str(exc), "tool": "set_scenario"}
+
+
+@mcp.tool()
+def get_expected_value(
+    symbol: str,
+    current_price: float,
+) -> dict[str, Any]:
+    """Compute probability-weighted expected value from bull/base/bear scenarios.
+
+    Args:
+        symbol: Stock ticker.
+        current_price: Current market price for return calculation.
+
+    Returns:
+        Expected price, expected return %, and scenario breakdown.
+    """
+    try:
+        from domain.rating.repository import compute_expected_value
+        return compute_expected_value(DB_PATH, symbol.upper(), current_price)
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_expected_value"}
+
+
+@mcp.tool()
+def generate_research_report(symbol: str) -> dict[str, Any]:
+    """Generate a comprehensive individual stock research report.
+
+    Aggregates all available data: company profile, financials, valuation,
+    rating, scenarios, revenue trends, dividends, supply chain, themes,
+    catalysts, and peer comparison into one structured report.
+
+    Args:
+        symbol: Stock ticker.
+
+    Returns:
+        Full research report with 12 sections.
+    """
+    try:
+        import urllib.request, json
+        resp = urllib.request.urlopen(
+            f"http://localhost:8000/api/report/{symbol.upper()}", timeout=15
+        )
+        return json.loads(resp.read())
+    except Exception:
+        # Fallback: build from local DB
+        try:
+            sym = symbol.upper()
+            report: dict = {"symbol": sym, "sections": {}}
+            with _research_db() as con:
+                company = con.execute(
+                    "SELECT * FROM research_companies WHERE ticker=?", (sym,),
+                ).fetchone()
+                report["sections"]["company"] = dict(company) if company else None
+
+                from domain.rating.repository import get_rating, get_scenarios_q
+                report["sections"]["rating"] = get_rating(DB_PATH, sym)
+                report["sections"]["scenarios"] = get_scenarios_q(DB_PATH, sym)
+
+                from domain.financials.repository import (
+                    get_financial_statements, get_valuation_metrics as _gv,
+                    get_dividend_history,
+                )
+                report["sections"]["income"] = get_financial_statements(DB_PATH, sym, "income", 4)
+                report["sections"]["valuation"] = _gv(DB_PATH, sym, 5)
+                report["sections"]["dividends"] = get_dividend_history(DB_PATH, sym, 5)
+
+            return report
+        except Exception as inner:
+            return {"error": str(inner), "tool": "generate_research_report"}
+
+
+@mcp.tool()
+def get_dcf_valuation(
+    symbol: str,
+    wacc: float = 0.09,
+    terminal_growth: float = 0.02,
+) -> dict[str, Any]:
+    """Run a DCF (Discounted Cash Flow) valuation model.
+
+    Uses historical free cash flow to project future cash flows and
+    compute an implied share price.
+
+    Args:
+        symbol: Stock ticker.
+        wacc: Weighted average cost of capital (default 0.09).
+        terminal_growth: Terminal growth rate (default 0.02).
+
+    Returns:
+        DCF model output with implied share price and assumptions.
+    """
+    try:
+        import urllib.request, json
+        url = f"http://localhost:8000/api/dcf/{symbol.upper()}?wacc={wacc}&terminal_growth={terminal_growth}"
+        resp = urllib.request.urlopen(url, timeout=30)
+        return json.loads(resp.read())
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_dcf_valuation"}
+
+
+@mcp.tool()
+def get_pe_band(
+    symbol: str,
+    years: int = 5,
+) -> dict[str, Any]:
+    """Get P/E Band (河流圖) data for valuation analysis.
+
+    Returns historical PER percentile bands (cheap/fair/expensive zones)
+    and time series data for charting.
+
+    Args:
+        symbol: Stock ticker.
+        years: Years of history (default 5).
+
+    Returns:
+        PER bands (p10-p90), trailing EPS, band prices, and time series.
+    """
+    try:
+        import urllib.request, json
+        url = f"http://localhost:8000/api/pe-band/{symbol.upper()}?years={years}"
+        resp = urllib.request.urlopen(url, timeout=15)
+        return json.loads(resp.read())
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_pe_band"}
+
+
+@mcp.tool()
+def get_beta(
+    symbol: str,
+    benchmark: str = "0050",
+) -> dict[str, Any]:
+    """Calculate Beta coefficient for a stock vs a benchmark.
+
+    Beta measures systematic risk relative to the market.
+    Beta > 1 = more volatile, Beta < 1 = less volatile.
+
+    Args:
+        symbol: Stock ticker.
+        benchmark: Benchmark ticker (default "0050").
+
+    Returns:
+        Beta, alpha, correlation, R², and interpretation.
+    """
+    try:
+        import urllib.request, json
+        url = f"http://localhost:8000/api/beta/{symbol.upper()}?bench={benchmark}"
+        resp = urllib.request.urlopen(url, timeout=30)
+        return json.loads(resp.read())
+    except Exception as exc:
+        return {"error": str(exc), "tool": "get_beta"}
+
+
+# ===========================================================================
 # Entry point
 # ===========================================================================
 
