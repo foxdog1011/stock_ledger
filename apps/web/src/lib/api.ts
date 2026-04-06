@@ -361,6 +361,25 @@ export const urls = {
   // Deep Dive
   deepDive:   (symbol: string) => url(`/api/deep-dive/${encodeURIComponent(symbol)}`),
   deepDiveAI: (symbol: string) => url(`/api/deep-dive/${encodeURIComponent(symbol)}/ai-analysis`),
+
+  // Rating
+  ratings: () => url("/api/ratings"),
+  rating: (symbol: string) => url(`/api/rating/${encodeURIComponent(symbol)}`),
+  scenario: (symbol: string) => url(`/api/scenario/${encodeURIComponent(symbol)}`),
+  scenarioEV: (symbol: string) => url(`/api/scenario/${encodeURIComponent(symbol)}/expected-value`),
+  ratingReport: (symbol: string) => url(`/api/report/${encodeURIComponent(symbol)}`),
+
+  // Financials
+  financials: (symbol: string) => url(`/api/financials/${encodeURIComponent(symbol)}`),
+  fetchAllFundamentals: (symbol: string) => url(`/api/fundamentals/${encodeURIComponent(symbol)}/fetch-all`),
+  valuation: (symbol: string) => url(`/api/valuation/${encodeURIComponent(symbol)}`),
+  peers: (symbol: string) => url(`/api/peers/${encodeURIComponent(symbol)}`),
+
+  // Advanced Valuation
+  dcf: (symbol: string) => url(`/api/dcf/${encodeURIComponent(symbol)}`),
+  peBand: (symbol: string) => url(`/api/pe-band/${encodeURIComponent(symbol)}`),
+  beta: (symbol: string) => url(`/api/beta/${encodeURIComponent(symbol)}`),
+  dividendAnalysis: (symbol: string) => url(`/api/dividend-analysis/${encodeURIComponent(symbol)}`),
 } as const;
 
 // ── Multipart upload helper ───────────────────────────────────────────────────

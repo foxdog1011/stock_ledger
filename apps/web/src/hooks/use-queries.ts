@@ -1030,3 +1030,106 @@ export function useDeepDiveAIMutation() {
       fetch(urls.deepDiveAI(symbol)).then(r => r.json()),
   });
 }
+
+// ── Rating ─────────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useRatings() {
+  return useQuery<any[]>({
+    queryKey: ["ratings"],
+    queryFn: () => fetcher(urls.ratings()),
+    staleTime: 60_000,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useRating(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["rating", symbol],
+    queryFn: () => fetcher(urls.rating(symbol!)),
+    enabled: !!symbol,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useScenario(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["scenario", symbol],
+    queryFn: () => fetcher(urls.scenario(symbol!)),
+    enabled: !!symbol,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useScenarioEV(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["scenarioEV", symbol],
+    queryFn: () => fetcher(urls.scenarioEV(symbol!)),
+    enabled: !!symbol,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+// ── Financials ─────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useFinancials(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["financials", symbol],
+    queryFn: () => fetcher(urls.financials(symbol!)),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useValuation(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["valuation", symbol],
+    queryFn: () => fetcher(urls.valuation(symbol!)),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function usePeers(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["peers", symbol],
+    queryFn: () => fetcher(urls.peers(symbol!)),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+// ── Advanced Valuation ─────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useDCF(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["dcf", symbol],
+    queryFn: () => fetcher(urls.dcf(symbol!)),
+    enabled: !!symbol,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function usePEBand(symbol: string | null) {
+  return useQuery<any>({
+    queryKey: ["peBand", symbol],
+    queryFn: () => fetcher(urls.peBand(symbol!)),
+    enabled: !!symbol,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+}

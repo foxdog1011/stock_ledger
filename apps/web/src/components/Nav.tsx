@@ -15,6 +15,7 @@ const primaryLinks = [
   { href: "/positions",   label: "持倉" },
   { href: "/research",    label: "研究" },
   { href: "/stock",       label: "個股深研" },
+  { href: "/ratings",     label: "評等" },
   { href: "/chat",        label: "J.A.R.V.I.S." },
 ] as const;
 

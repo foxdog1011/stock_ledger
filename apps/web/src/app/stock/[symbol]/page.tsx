@@ -9,7 +9,10 @@ import {
   ReferenceLine, Cell, Legend,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { useDeepDive, useDeepDiveAIMutation } from "@/hooks/use-queries";
+import {
+  useDeepDive, useDeepDiveAIMutation,
+  useRating, useScenarioEV, useFinancials, useValuation, useDCF, usePEBand,
+} from "@/hooks/use-queries";
 import type {
   DeepDiveData,
   DeepDiveCompany,
@@ -24,6 +27,7 @@ import type {
 import {
   ArrowLeft, TrendingUp, TrendingDown, Minus, Zap,
   AlertTriangle, Building2, BarChart3, Activity,
+  Target, DollarSign, Star,
 } from "lucide-react";
 
 const RECENT_KEY = "deep_dive_recent";
@@ -830,6 +834,247 @@ function AIAnalysisSection({ symbol }: { symbol: string }) {
   );
 }
 
+// ── Rating & Scenario ────────────────────────────────────────────────────────
+
+const RATING_COLORS: Record<string, string> = {
+  "Strong Buy":  "text-emerald-400 bg-emerald-950/60 border-emerald-700/50",
+  "Buy":         "text-emerald-300 bg-emerald-950/40 border-emerald-700/40",
+  "Hold":        "text-zinc-300 bg-zinc-700/60 border-zinc-600",
+  "Sell":        "text-red-300 bg-red-950/40 border-red-700/40",
+  "Strong Sell": "text-red-400 bg-red-950/60 border-red-700/50",
+};
+
+function RatingSection({ symbol }: { symbol: string }) {
+  const { data: rating } = useRating(symbol);
+  const { data: ev } = useScenarioEV(symbol);
+
+  if (!rating && !ev) return null;
+
+  return (
+    <Card title="投資評等" icon={<Star className="h-4 w-4" />}>
+      <div className="space-y-4">
+        {rating && (
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className={cn(
+              "text-sm font-bold px-3 py-1.5 rounded-lg border",
+              RATING_COLORS[rating.rating] ?? "text-zinc-300 bg-zinc-700/60 border-zinc-600",
+            )}>
+              {rating.rating}
+            </span>
+            {rating.target_price && (
+              <div className="text-sm">
+                <span className="text-zinc-500">目標價</span>{" "}
+                <span className="font-mono font-semibold text-emerald-400">
+                  {rating.target_price.toLocaleString()}
+                </span>
+              </div>
+            )}
+            {rating.stop_loss && (
+              <div className="text-sm">
+                <span className="text-zinc-500">停損價</span>{" "}
+                <span className="font-mono font-semibold text-red-400">
+                  {rating.stop_loss.toLocaleString()}
+                </span>
+              </div>
+            )}
+            {rating.current_price && rating.target_price && (
+              <div className="text-sm">
+                <span className="text-zinc-500">潛在漲幅</span>{" "}
+                <span className={cn(
+                  "font-mono font-semibold",
+                  rating.target_price > rating.current_price ? "text-emerald-400" : "text-red-400",
+                )}>
+                  {((rating.target_price - rating.current_price) / rating.current_price * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+        {rating?.notes && (
+          <p className="text-xs text-zinc-400">{rating.notes}</p>
+        )}
+
+        {/* Scenario expected value */}
+        {ev && ev.scenarios && (
+          <div className="space-y-2 pt-2 border-t border-zinc-700/60">
+            <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">情境分析</p>
+            <div className="grid grid-cols-3 gap-2">
+              {ev.scenarios.map((s: { label: string; target: number; probability: number }) => (
+                <div key={s.label} className="rounded-lg border border-zinc-700/60 p-2.5 text-center">
+                  <p className="text-xs text-zinc-500">{s.label}</p>
+                  <p className="font-mono font-bold text-sm mt-1">{s.target.toLocaleString()}</p>
+                  <p className="text-xs text-zinc-600 mt-0.5">{(s.probability * 100).toFixed(0)}%</p>
+                </div>
+              ))}
+            </div>
+            {ev.expected_value != null && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-zinc-500">期望值</span>
+                <span className="font-mono font-bold text-amber-400">
+                  {ev.expected_value.toLocaleString()}
+                </span>
+                {ev.upside_pct != null && (
+                  <span className={cn(
+                    "text-xs font-mono",
+                    ev.upside_pct >= 0 ? "text-emerald-400" : "text-red-400",
+                  )}>
+                    ({ev.upside_pct >= 0 ? "+" : ""}{ev.upside_pct.toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ── Financials & Valuation ───────────────────────────────────────────────────
+
+function FinancialsSection({ symbol }: { symbol: string }) {
+  const { data: fin } = useFinancials(symbol);
+  const { data: val } = useValuation(symbol);
+
+  if (!fin && !val) return null;
+
+  const quarters = fin?.quarters ?? [];
+  const latestQ = quarters[0];
+
+  return (
+    <Card title="財務數據" icon={<DollarSign className="h-4 w-4" />}>
+      <div className="space-y-3">
+        {/* Valuation metrics */}
+        {val && (
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: "PER", value: val.per?.toFixed(1) },
+              { label: "PBR", value: val.pbr?.toFixed(2) },
+              { label: "殖利率", value: val.dividend_yield ? `${val.dividend_yield.toFixed(2)}%` : null },
+              { label: "EPS(TTM)", value: val.eps_ttm?.toFixed(2) },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-lg border border-zinc-700/60 p-2 text-center">
+                <p className="text-xs text-zinc-500">{label}</p>
+                <p className="font-mono font-semibold text-sm mt-1">{value ?? "—"}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Quarterly EPS trend */}
+        {quarters.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">季度 EPS</p>
+            <div className="flex gap-1.5">
+              {quarters.slice(0, 8).reverse().map((q: { quarter: string; eps: number }) => (
+                <div key={q.quarter} className="flex-1 rounded-md border border-zinc-700/60 p-1.5 text-center">
+                  <p className="text-[10px] text-zinc-600">{q.quarter}</p>
+                  <p className={cn(
+                    "font-mono text-xs font-semibold mt-0.5",
+                    q.eps >= 0 ? "text-emerald-400" : "text-red-400",
+                  )}>
+                    {q.eps.toFixed(2)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Margin trend */}
+        {quarters.length > 0 && latestQ?.gross_margin != null && (
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-zinc-700/60">
+            {[
+              { label: "毛利率", value: latestQ.gross_margin },
+              { label: "營益率", value: latestQ.operating_margin },
+              { label: "淨利率", value: latestQ.net_margin },
+            ].map(({ label, value }) => (
+              <div key={label} className="text-center">
+                <p className="text-xs text-zinc-500">{label}</p>
+                <p className="font-mono text-sm font-semibold mt-0.5">
+                  {value != null ? `${(value * 100).toFixed(1)}%` : "—"}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ── Valuation Models ─────────────────────────────────────────────────────────
+
+function ValuationSection({ symbol }: { symbol: string }) {
+  const { data: dcf } = useDCF(symbol);
+  const { data: pe } = usePEBand(symbol);
+
+  if (!dcf && !pe) return null;
+
+  return (
+    <Card title="估值模型" icon={<Target className="h-4 w-4" />}>
+      <div className="space-y-4">
+        {/* DCF */}
+        {dcf && dcf.fair_value != null && (
+          <div className="space-y-1.5">
+            <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">DCF 估值</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg border border-zinc-700/60 p-2 text-center">
+                <p className="text-xs text-zinc-500">合理價</p>
+                <p className="font-mono font-bold text-amber-400 mt-1">
+                  {dcf.fair_value.toLocaleString()}
+                </p>
+              </div>
+              {dcf.wacc != null && (
+                <div className="rounded-lg border border-zinc-700/60 p-2 text-center">
+                  <p className="text-xs text-zinc-500">WACC</p>
+                  <p className="font-mono text-sm mt-1">{(dcf.wacc * 100).toFixed(1)}%</p>
+                </div>
+              )}
+              {dcf.terminal_growth != null && (
+                <div className="rounded-lg border border-zinc-700/60 p-2 text-center">
+                  <p className="text-xs text-zinc-500">終值成長率</p>
+                  <p className="font-mono text-sm mt-1">{(dcf.terminal_growth * 100).toFixed(1)}%</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* PE Band */}
+        {pe && pe.per_bands && (
+          <div className="space-y-1.5 pt-2 border-t border-zinc-700/60">
+            <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider">PE Band (河流圖)</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {pe.per_bands.map((b: { multiple: number; price: number }, i: number) => {
+                const labels = ["極便宜", "便宜", "合理", "昂貴", "極昂貴"];
+                const colors = [
+                  "text-emerald-400", "text-emerald-300", "text-zinc-300", "text-red-300", "text-red-400",
+                ];
+                return (
+                  <div key={i} className="rounded-md border border-zinc-700/60 p-1.5 text-center">
+                    <p className="text-[10px] text-zinc-600">{labels[i] ?? `${b.multiple}x`}</p>
+                    <p className={cn("font-mono text-xs font-semibold mt-0.5", colors[i])}>
+                      {b.price.toLocaleString()}
+                    </p>
+                    <p className="text-[10px] text-zinc-600">{b.multiple.toFixed(0)}x</p>
+                  </div>
+                );
+              })}
+            </div>
+            {pe.per_stats && (
+              <div className="flex gap-3 text-xs text-zinc-500 mt-1">
+                <span>現在 PER: <span className="text-zinc-300 font-mono">{pe.per_stats.current?.toFixed(1) ?? "—"}</span></span>
+                <span>百分位: <span className="text-zinc-300 font-mono">{pe.per_stats.percentile?.toFixed(0) ?? "—"}%</span></span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function StockDeepDivePage() {
@@ -893,7 +1138,16 @@ export default function StockDeepDivePage() {
               <AnomalySection anomalies={data.anomalies} />
             </div>
 
-            {/* Row 5: Catalysts */}
+            {/* Row 5: Rating + Valuation */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <RatingSection symbol={data.symbol} />
+              <ValuationSection symbol={data.symbol} />
+            </div>
+
+            {/* Row 6: Financials (full width) */}
+            <FinancialsSection symbol={data.symbol} />
+
+            {/* Row 7: Catalysts */}
             <CatalystSection catalysts={data.catalysts} symbol={data.symbol} />
 
             {/* Row 6: AI Analysis */}
