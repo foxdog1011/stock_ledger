@@ -1037,7 +1037,8 @@ export function useDeepDiveAIMutation() {
 export function useRatings() {
   return useQuery<any[]>({
     queryKey: ["ratings"],
-    queryFn: () => fetcher(urls.ratings()),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    queryFn: async () => { const d: any = await fetcher(urls.ratings()); return d.ratings ?? d; },
     staleTime: 60_000,
   });
 }

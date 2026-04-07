@@ -837,11 +837,16 @@ function AIAnalysisSection({ symbol }: { symbol: string }) {
 // ── Rating & Scenario ────────────────────────────────────────────────────────
 
 const RATING_COLORS: Record<string, string> = {
-  "Strong Buy":  "text-emerald-400 bg-emerald-950/60 border-emerald-700/50",
-  "Buy":         "text-emerald-300 bg-emerald-950/40 border-emerald-700/40",
-  "Hold":        "text-zinc-300 bg-zinc-700/60 border-zinc-600",
-  "Sell":        "text-red-300 bg-red-950/40 border-red-700/40",
-  "Strong Sell": "text-red-400 bg-red-950/60 border-red-700/50",
+  strong_buy:  "text-emerald-400 bg-emerald-950/60 border-emerald-700/50",
+  buy:         "text-emerald-300 bg-emerald-950/40 border-emerald-700/40",
+  hold:        "text-zinc-300 bg-zinc-700/60 border-zinc-600",
+  sell:        "text-red-300 bg-red-950/40 border-red-700/40",
+  strong_sell: "text-red-400 bg-red-950/60 border-red-700/50",
+};
+
+const RATING_LABELS: Record<string, string> = {
+  strong_buy: "Strong Buy", buy: "Buy", hold: "Hold",
+  sell: "Sell", strong_sell: "Strong Sell",
 };
 
 function RatingSection({ symbol }: { symbol: string }) {
@@ -859,7 +864,7 @@ function RatingSection({ symbol }: { symbol: string }) {
               "text-sm font-bold px-3 py-1.5 rounded-lg border",
               RATING_COLORS[rating.rating] ?? "text-zinc-300 bg-zinc-700/60 border-zinc-600",
             )}>
-              {rating.rating}
+              {RATING_LABELS[rating.rating] ?? rating.rating}
             </span>
             {rating.target_price && (
               <div className="text-sm">
@@ -890,8 +895,8 @@ function RatingSection({ symbol }: { symbol: string }) {
             )}
           </div>
         )}
-        {rating?.notes && (
-          <p className="text-xs text-zinc-400">{rating.notes}</p>
+        {rating?.thesis && (
+          <p className="text-xs text-zinc-400">{rating.thesis}</p>
         )}
 
         {/* Scenario expected value */}

@@ -14,16 +14,24 @@ import { useRatings } from "@/hooks/use-queries";
 import { cn } from "@/lib/utils";
 
 const RATING_COLORS: Record<string, string> = {
-  "Strong Buy":  "bg-emerald-500/15 text-emerald-400 border-emerald-500/40",
-  "Buy":         "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
-  "Hold":        "bg-zinc-500/15 text-zinc-300 border-zinc-500/30",
-  "Sell":        "bg-red-500/10 text-red-300 border-red-500/30",
-  "Strong Sell": "bg-red-500/15 text-red-400 border-red-500/40",
+  strong_buy:  "bg-emerald-500/15 text-emerald-400 border-emerald-500/40",
+  buy:         "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
+  hold:        "bg-zinc-500/15 text-zinc-300 border-zinc-500/30",
+  sell:        "bg-red-500/10 text-red-300 border-red-500/30",
+  strong_sell: "bg-red-500/15 text-red-400 border-red-500/40",
+};
+
+const RATING_LABELS: Record<string, string> = {
+  strong_buy: "Strong Buy",
+  buy: "Buy",
+  hold: "Hold",
+  sell: "Sell",
+  strong_sell: "Strong Sell",
 };
 
 function ratingOrder(r: string): number {
   const order: Record<string, number> = {
-    "Strong Buy": 0, "Buy": 1, "Hold": 2, "Sell": 3, "Strong Sell": 4,
+    strong_buy: 0, buy: 1, hold: 2, sell: 3, strong_sell: 4,
   };
   return order[r] ?? 5;
 }
@@ -49,11 +57,11 @@ export default function RatingsPage() {
   );
 
   const summary = {
-    strongBuy: sorted.filter((r) => r.rating === "Strong Buy").length,
-    buy: sorted.filter((r) => r.rating === "Buy").length,
-    hold: sorted.filter((r) => r.rating === "Hold").length,
-    sell: sorted.filter((r) => r.rating === "Sell").length,
-    strongSell: sorted.filter((r) => r.rating === "Strong Sell").length,
+    strongBuy: sorted.filter((r) => r.rating === "strong_buy").length,
+    buy: sorted.filter((r) => r.rating === "buy").length,
+    hold: sorted.filter((r) => r.rating === "hold").length,
+    sell: sorted.filter((r) => r.rating === "sell").length,
+    strongSell: sorted.filter((r) => r.rating === "strong_sell").length,
   };
 
   return (
@@ -117,7 +125,7 @@ export default function RatingsPage() {
                   <TableHead className="text-right">停損價</TableHead>
                   <TableHead className="text-right">潛在漲幅</TableHead>
                   <TableHead className="text-right">風險報酬比</TableHead>
-                  <TableHead>備註</TableHead>
+                  <TableHead>投資論點</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -147,7 +155,7 @@ export default function RatingsPage() {
                           variant="outline"
                           className={cn("text-xs", RATING_COLORS[r.rating] ?? "")}
                         >
-                          {r.rating}
+                          {RATING_LABELS[r.rating] ?? r.rating}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono">
@@ -169,7 +177,7 @@ export default function RatingsPage() {
                         {rrr ? `${rrr}:1` : "—"}
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
-                        {r.notes ?? ""}
+                        {r.thesis ?? ""}
                       </TableCell>
                     </TableRow>
                   );
