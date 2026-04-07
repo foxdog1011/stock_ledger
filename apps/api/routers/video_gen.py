@@ -1415,6 +1415,7 @@ def pick_stock(req: PickStockRequest):
 
 
 # ── n8n-friendly: Generate + Upload (JSON API) ─────────────────────────────
+# Reuses all calendar.py logic: OpenAI script, TTS, CTR titles, SEO descriptions
 
 
 class N8nGenerateRequest(BaseModel):
@@ -1430,98 +1431,94 @@ class N8nGenerateResponse(BaseModel):
     title: str
     description: str
     tags: list[str]
+    script: str
     symbol: str
     slot: str
 
 
 @router.post(
     "/video-gen/generate",
-    summary="Generate video and return JSON metadata (for n8n)",
+    summary="Generate video with full pipeline (script+TTS+CTR title) for n8n",
     response_model=N8nGenerateResponse,
 )
 def n8n_generate_video(req: N8nGenerateRequest):
-    """Generate video, save on server, return JSON with file path + metadata.
+    """Full video generation pipeline for n8n, reusing calendar.py logic.
 
-    Designed for n8n workflow: returns JSON instead of binary MP4.
+    1. Build episode dict from pick-stock output
+    2. Generate OpenAI script (_generate_script)
+    3. Render video with TTS (_generate_video)
+    4. Generate thumbnail (_generate_thumbnail)
+    5. Build CTR title (_build_algo_title)
+    6. Build SEO description (_build_algo_description)
+    7. Build tags (_build_algo_tags)
+    8. Return JSON with all metadata + file paths
     """
+    from apps.api.routers.calendar import (
+        _generate_script,
+        _generate_video,
+        _generate_thumbnail,
+        _fetch_chip_summary,
+        _get_company_name_for_title,
+        _build_algo_title,
+        _build_algo_description,
+        _build_algo_tags,
+    )
+
     symbol = req.symbol.upper().strip()
     is_shorts = req.slot in ("morning", "afternoon")
-    fmt = "shorts" if is_shorts else "landscape"
 
-    # Generate the video using the existing endpoint logic
-    video_req = VideoRequest(symbol=symbol, format=fmt)
-    chip = _get_chip_data(symbol, 7)
-    daily = chip.get("daily", [])
-    if not daily:
-        raise HTTPException(404, f"No chip data for {symbol}")
+    # Map slot to content_type
+    slot_content_type = {
+        "morning": "single",
+        "afternoon": "single",
+        "long_tuesday": "single",
+        "long_friday": "macro",
+    }
+    content_type = slot_content_type.get(req.slot, "single")
 
-    summary = chip.get("summary", {})
-    company_name = _get_company_name(symbol)
-    date_range = f"{daily[0]['date']} ～ {daily[-1]['date']}"
-    foreign_net_k = _compute_foreign_net_k(summary, daily)
+    # Build episode dict matching calendar.py's expected format
+    episode = {
+        "symbol": symbol,
+        "title": req.title,
+        "content_type": content_type,
+        "pick_reason": "",
+        "sector_name": "",
+        "symbols": [],
+        "metadata": {
+            "format": "shorts" if is_shorts else "landscape",
+            "days": 7,
+            "weekly_review": req.slot == "long_friday",
+            "breaking": False,
+        },
+    }
 
-    if is_shorts:
-        frames = [
-            (_make_shorts_slide(symbol, company_name, date_range, summary, daily), 58),
-        ]
-    else:
-        frames = [
-            (_make_title_slide(symbol, company_name, date_range), SLIDE_SECONDS["title"]),
-            (_make_foreign_chart(daily), SLIDE_SECONDS["chart"]),
-            (_make_trust_dealer_chart(daily), SLIDE_SECONDS["chart"]),
-            (_make_cumulative_chart(daily), SLIDE_SECONDS["chart"]),
-            (_make_summary_slide(summary, date_range), SLIDE_SECONDS["summary"]),
-        ]
+    # Step 1: Generate script via OpenAI
+    script = _generate_script(episode)
 
-    # TTS — generate a quick script from the title
-    audio = None
-
-    # Build video
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir="/tmp")
-    tmp.close()
+    # Step 2: Generate video (with script + TTS)
     try:
-        _build_mp4(frames, audio, tmp.name)
+        video_path = _generate_video(episode, script)
     except Exception as exc:
-        _cleanup_file(tmp.name)
         raise HTTPException(500, f"Video generation failed: {exc}") from exc
 
-    # Thumbnail (long-form only)
-    thumb_path = None
-    if not is_shorts:
-        try:
-            png_bytes = make_thumbnail(symbol, company_name, foreign_net_k, date_range)
-            thumb_path = f"/tmp/{symbol}_thumbnail.png"
-            Path(thumb_path).write_bytes(png_bytes)
-        except Exception:
-            logger.exception("Thumbnail generation failed — continuing without")
+    # Step 3: Generate thumbnail (long-form only)
+    thumb_path = _generate_thumbnail(episode)
 
-    # Build YouTube metadata
-    slot_labels = {
-        "morning": "盤前快報",
-        "afternoon": "盤後速報",
-        "long_tuesday": "個股深度分析",
-        "long_friday": "三大法人週報",
-    }
-    slot_label = slot_labels.get(req.slot, req.slot)
+    # Step 4: Build CTR-optimized title + SEO description + tags
+    chip = _fetch_chip_summary(symbol, days=7) if symbol else {}
+    company_name = _get_company_name_for_title(symbol) if symbol else ""
 
-    description = (
-        f"{req.title}\n\n"
-        f"本集分析 {symbol} {company_name} 三大法人籌碼動向\n"
-        f"資料區間：{date_range}\n\n"
-        f"#台股 #三大法人 #籌碼分析 #JARVIS選股 #{symbol} #{company_name}"
-    )
-    tags = [
-        "台股", "三大法人", "籌碼分析", "JARVIS選股", "AI投資實驗室",
-        symbol, company_name, f"{company_name}分析", f"{symbol}分析",
-        slot_label,
-    ]
+    algo_title = _build_algo_title(episode, chip, company_name, is_shorts)
+    description = _build_algo_description(episode, chip, company_name, is_shorts, script)
+    tags = _build_algo_tags(episode, company_name, is_shorts)
 
     return N8nGenerateResponse(
-        video_path=tmp.name,
+        video_path=video_path,
         thumbnail_path=thumb_path,
-        title=req.title,
+        title=algo_title,
         description=description,
         tags=tags,
+        script=script,
         symbol=symbol,
         slot=req.slot,
     )
@@ -1532,9 +1529,12 @@ class N8nUploadRequest(BaseModel):
     title: str
     description: str = ""
     tags: list[str] = []
+    script: str = ""
     slot: str = "morning"
     privacy: str = "public"
+    publish_time: Optional[str] = None  # e.g. "08:00", "14:30"
     thumbnail_path: Optional[str] = None
+    symbol: str = ""
 
 
 class N8nUploadResponse(BaseModel):
@@ -1542,17 +1542,19 @@ class N8nUploadResponse(BaseModel):
     url: str
     title: str
     privacy: str
+    publish_at: Optional[str] = None
 
 
 @router.post(
     "/video-gen/upload-youtube",
-    summary="Upload a server-side video to YouTube (for n8n)",
+    summary="Upload video to YouTube with publishAt scheduling (for n8n)",
     response_model=N8nUploadResponse,
 )
 def n8n_upload_youtube(req: N8nUploadRequest):
-    """Upload a video file already on the server to YouTube.
+    """Upload video to YouTube, reusing calendar.py's upload logic.
 
-    Designed for n8n workflow: accepts JSON body with server file path.
+    Supports publishAt scheduling: pass publish_time (e.g. "08:00") and
+    video uploads as private, YouTube auto-publishes at scheduled time.
     """
     from apps.api.routers.youtube_upload import (
         _build_youtube_client,
@@ -1570,10 +1572,29 @@ def n8n_upload_youtube(req: N8nUploadRequest):
     if privacy not in ("public", "unlisted", "private"):
         raise HTTPException(400, "privacy must be public, unlisted, or private")
 
+    is_shorts = req.slot in ("morning", "afternoon")
+
+    # Compute publishAt if publish_time provided
+    publish_at: str | None = None
+    if req.publish_time:
+        try:
+            from datetime import datetime, date, timezone, timedelta
+            hour, minute = (int(x) for x in req.publish_time.split(":"))
+            today = date.today()
+            taipei_tz = timezone(timedelta(hours=8))
+            publish_dt = datetime(today.year, today.month, today.day,
+                                 hour, minute, 0, tzinfo=taipei_tz)
+            publish_at = publish_dt.isoformat()
+            # When using publishAt, upload as private first
+            privacy = "private"
+        except (ValueError, TypeError):
+            logger.warning("Could not parse publish_time: %s", req.publish_time)
+
     try:
         youtube = _build_youtube_client()
         video_id = _upload_video(
-            youtube, video_path, req.title, req.description, req.tags, privacy
+            youtube, video_path, req.title[:100], req.description,
+            req.tags, privacy, publish_at,
         )
 
         # Set thumbnail if available
@@ -1583,7 +1604,7 @@ def n8n_upload_youtube(req: N8nUploadRequest):
             except Exception:
                 logger.exception("Thumbnail upload failed — continuing")
 
-        # Add to playlist based on slot
+        # Add to playlist
         slot_playlist_map = {
             "morning": "每日快報",
             "afternoon": "每日快報",
@@ -1614,4 +1635,5 @@ def n8n_upload_youtube(req: N8nUploadRequest):
         url=f"https://youtu.be/{video_id}",
         title=req.title,
         privacy=privacy,
+        publish_at=publish_at,
     )
