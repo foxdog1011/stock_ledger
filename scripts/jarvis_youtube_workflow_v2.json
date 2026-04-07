@@ -1,4 +1,5 @@
 {
+  "id": "1001",
   "name": "JARVIS YouTube v2 — n8n 全排程",
   "nodes": [
     {
@@ -432,7 +433,7 @@
       "position": [1640, 60],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'morning', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -448,7 +449,7 @@
       "position": [1640, 560],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'afternoon', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -464,7 +465,7 @@
       "position": [1640, 1060],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'long_tuesday', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -480,7 +481,7 @@
       "position": [1640, 1560],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'long_friday', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -611,7 +612,7 @@
       "position": [2360, 140],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'morning', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -627,7 +628,7 @@
       "position": [2360, 640],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'afternoon', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -643,7 +644,7 @@
       "position": [2360, 1140],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'long_tuesday', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -659,7 +660,7 @@
       "position": [2360, 1640],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/generate",
+        "url": "http://35.76.187.226/api/video/generate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ symbol: $json.symbol, title: $json.title, slot: $json.slot || 'long_friday', is_holiday_fallback: $json.is_holiday_fallback || false }) }}",
@@ -810,7 +811,7 @@
       "position": [2120, 20],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'morning', privacy: 'public' }) }}",
@@ -826,7 +827,7 @@
       "position": [2120, 520],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'afternoon', privacy: 'public' }) }}",
@@ -842,7 +843,7 @@
       "position": [2120, 1020],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'long_tuesday', privacy: 'public' }) }}",
@@ -858,7 +859,7 @@
       "position": [2120, 1520],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'long_friday', privacy: 'public' }) }}",
@@ -1264,7 +1265,7 @@
       "position": [3080, 80],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'morning', privacy: 'public' }) }}",
@@ -1280,7 +1281,7 @@
       "position": [3080, 580],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'afternoon', privacy: 'public' }) }}",
@@ -1296,7 +1297,7 @@
       "position": [3080, 1080],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'long_tuesday', privacy: 'public' }) }}",
@@ -1312,7 +1313,7 @@
       "position": [3080, 1580],
       "parameters": {
         "method": "POST",
-        "url": "http://35.76.187.226/api/video-gen/upload-youtube",
+        "url": "http://35.76.187.226/api/video/youtube-upload",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ video_path: $json.video_path, video_url: $json.video_url, title: $json.title, description: $json.description, tags: $json.tags, slot: 'long_friday', privacy: 'public' }) }}",
