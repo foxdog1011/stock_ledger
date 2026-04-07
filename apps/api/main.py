@@ -32,6 +32,7 @@ from .routers import (
 )
 from .routers import quotes_refresh, digest as digest_router
 from .routers import calendar as calendar_router
+from .routers import video_gen
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,7 @@ app.include_router(calendar_router.router,   prefix=PREFIX, tags=["calendar"])
 app.include_router(financials.router,        prefix=PREFIX, tags=["financials"])
 app.include_router(rating.router,            prefix=PREFIX, tags=["rating"])
 app.include_router(advanced_valuation.router, prefix=PREFIX, tags=["valuation"])
+app.include_router(video_gen.router,         prefix=PREFIX, tags=["video-gen"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

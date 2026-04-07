@@ -105,7 +105,7 @@ jobs:
 
             # Stop containers so all images become "unused", then aggressively prune
             cd /app && docker compose down 2>/dev/null || true
-            docker system prune -a -f --volumes 2>/dev/null || true
+            docker system prune -a -f 2>/dev/null || true
             # Also clean OS-level logs and temp files
             sudo journalctl --vacuum-size=50M 2>/dev/null || true
             sudo find /tmp -mtime +1 -delete 2>/dev/null || true
