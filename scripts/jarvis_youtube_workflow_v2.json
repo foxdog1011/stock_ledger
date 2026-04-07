@@ -15,8 +15,9 @@
         "rule": {
           "interval": [
             {
-              "field": "cronExpression",
-              "expression": "0 8 * * 1-5"
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0,
+              "daysInterval": 1
             }
           ]
         }
@@ -35,8 +36,9 @@
         "rule": {
           "interval": [
             {
-              "field": "cronExpression",
-              "expression": "30 14 * * 1-5"
+              "triggerAtHour": 14,
+              "triggerAtMinute": 30,
+              "daysInterval": 1
             }
           ]
         }
@@ -55,8 +57,9 @@
         "rule": {
           "interval": [
             {
-              "field": "cronExpression",
-              "expression": "0 12 * * 2"
+              "triggerAtHour": 12,
+              "triggerAtMinute": 0,
+              "daysInterval": 1
             }
           ]
         }
@@ -75,8 +78,9 @@
         "rule": {
           "interval": [
             {
-              "field": "cronExpression",
-              "expression": "0 12 * * 5"
+              "triggerAtHour": 12,
+              "triggerAtMinute": 0,
+              "daysInterval": 1
             }
           ]
         }
@@ -85,57 +89,53 @@
     {
       "id": "set-slot-am",
       "name": "Set Slot morning",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         440,
         100
       ],
       "parameters": {
-        "mode": "raw",
-        "jsonOutput": "={{ JSON.stringify({ slot: 'morning', slot_label: '盤前快報', publish_time: '08:00' }) }}"
+        "jsCode": "// Mon-Fri only (1-5)\nconst dow = new Date().getDay();\nif (dow === 0 || dow === 6) return [];\nreturn [{ json: JSON.stringify({ slot: 'morning', slot_label: '盤前快報', publish_time: '08:00' }) }];"
       }
     },
     {
       "id": "set-slot-pm",
       "name": "Set Slot afternoon",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         440,
         600
       ],
       "parameters": {
-        "mode": "raw",
-        "jsonOutput": "={{ JSON.stringify({ slot: 'afternoon', slot_label: '盤後速報', publish_time: '14:30' }) }}"
+        "jsCode": "// Mon-Fri only (1-5)\nconst dow = new Date().getDay();\nif (dow === 0 || dow === 6) return [];\nreturn [{ json: JSON.stringify({ slot: 'afternoon', slot_label: '盤後速報', publish_time: '14:30' }) }];"
       }
     },
     {
       "id": "set-slot-long-tue",
       "name": "Set Slot long_tuesday",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         440,
         1100
       ],
       "parameters": {
-        "mode": "raw",
-        "jsonOutput": "={{ JSON.stringify({ slot: 'long_tuesday', slot_label: '個股深度分析', publish_time: '12:00' }) }}"
+        "jsCode": "// Tuesday only (2)\nconst dow = new Date().getDay();\nif (dow !== 2) return [];\nreturn [{ json: JSON.stringify({ slot: 'long_tuesday', slot_label: '個股深度分析', publish_time: '12:00' }) }];"
       }
     },
     {
       "id": "set-slot-long-fri",
       "name": "Set Slot long_friday",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         440,
         1600
       ],
       "parameters": {
-        "mode": "raw",
-        "jsonOutput": "={{ JSON.stringify({ slot: 'long_friday', slot_label: '三大法人週報', publish_time: '12:00' }) }}"
+        "jsCode": "// Friday only (5)\nconst dow = new Date().getDay();\nif (dow !== 5) return [];\nreturn [{ json: JSON.stringify({ slot: 'long_friday', slot_label: '三大法人週報', publish_time: '12:00' }) }];"
       }
     },
     {
@@ -194,7 +194,7 @@
       "id": "pick-stock-am",
       "name": "Pick Stock (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         920,
         100
@@ -206,11 +206,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ slot: $json.slot, exclude_symbols: $json.exclude_symbols }) }}",
         "options": {
-          "timeout": 30000,
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 120000
-          }
+          "timeout": 30000
         }
       },
       "onError": "continueErrorOutput"
@@ -219,7 +215,7 @@
       "id": "pick-stock-pm",
       "name": "Pick Stock (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         920,
         600
@@ -231,11 +227,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ slot: $json.slot, exclude_symbols: $json.exclude_symbols }) }}",
         "options": {
-          "timeout": 30000,
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 120000
-          }
+          "timeout": 30000
         }
       },
       "onError": "continueErrorOutput"
@@ -244,7 +236,7 @@
       "id": "pick-stock-long-tue",
       "name": "Pick Stock (Tue Long)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         920,
         1100
@@ -256,11 +248,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ slot: $json.slot, exclude_symbols: $json.exclude_symbols }) }}",
         "options": {
-          "timeout": 30000,
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 120000
-          }
+          "timeout": 30000
         }
       },
       "onError": "continueErrorOutput"
@@ -269,7 +257,7 @@
       "id": "pick-stock-long-fri",
       "name": "Pick Stock (Fri Long)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         920,
         1600
@@ -281,11 +269,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ slot: $json.slot, exclude_symbols: $json.exclude_symbols }) }}",
         "options": {
-          "timeout": 30000,
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 120000
-          }
+          "timeout": 30000
         }
       },
       "onError": "continueErrorOutput"
@@ -414,7 +398,7 @@
       "id": "discord-skip-am",
       "name": "Discord Skip (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1400,
         200
@@ -431,7 +415,7 @@
       "id": "discord-skip-pm",
       "name": "Discord Skip (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1400,
         700
@@ -448,7 +432,7 @@
       "id": "discord-skip-long-tue",
       "name": "Discord Skip (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1400,
         1200
@@ -465,7 +449,7 @@
       "id": "discord-skip-long-fri",
       "name": "Discord Skip (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1400,
         1700
@@ -534,7 +518,7 @@
       "id": "generate-am",
       "name": "Generate Video (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1640,
         60
@@ -555,7 +539,7 @@
       "id": "generate-pm",
       "name": "Generate Video (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1640,
         560
@@ -576,7 +560,7 @@
       "id": "generate-long-tue",
       "name": "Generate Video (Tue Long)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1640,
         1060
@@ -597,7 +581,7 @@
       "id": "generate-long-fri",
       "name": "Generate Video (Fri Long)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         1640,
         1560
@@ -778,7 +762,7 @@
       "id": "retry-gen-am-req",
       "name": "Retry Generate (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2360,
         140
@@ -799,7 +783,7 @@
       "id": "retry-gen-pm-req",
       "name": "Retry Generate (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2360,
         640
@@ -820,7 +804,7 @@
       "id": "retry-gen-long-tue-req",
       "name": "Retry Generate (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2360,
         1140
@@ -841,7 +825,7 @@
       "id": "retry-gen-long-fri-req",
       "name": "Retry Generate (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2360,
         1640
@@ -962,7 +946,7 @@
       "id": "discord-gen-fail-am",
       "name": "Discord Gen Fail (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         220
@@ -979,7 +963,7 @@
       "id": "discord-gen-fail-pm",
       "name": "Discord Gen Fail (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         720
@@ -996,7 +980,7 @@
       "id": "discord-gen-fail-long-tue",
       "name": "Discord Gen Fail (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         1220
@@ -1013,7 +997,7 @@
       "id": "discord-gen-fail-long-fri",
       "name": "Discord Gen Fail (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         1720
@@ -1030,7 +1014,7 @@
       "id": "upload-am",
       "name": "Upload YouTube (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2120,
         20
@@ -1051,7 +1035,7 @@
       "id": "upload-pm",
       "name": "Upload YouTube (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2120,
         520
@@ -1072,7 +1056,7 @@
       "id": "upload-long-tue",
       "name": "Upload YouTube (Tue Long)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2120,
         1020
@@ -1093,7 +1077,7 @@
       "id": "upload-long-fri",
       "name": "Upload YouTube (Fri Long)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2120,
         1520
@@ -1166,7 +1150,7 @@
       "id": "upload-route-am",
       "name": "Upload Route (AM)",
       "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
+      "typeVersion": 2,
       "position": [
         2600,
         20
@@ -1227,7 +1211,7 @@
       "id": "upload-route-pm",
       "name": "Upload Route (PM)",
       "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
+      "typeVersion": 2,
       "position": [
         2600,
         520
@@ -1288,7 +1272,7 @@
       "id": "upload-route-long-tue",
       "name": "Upload Route (Tue)",
       "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
+      "typeVersion": 2,
       "position": [
         2600,
         1020
@@ -1349,7 +1333,7 @@
       "id": "upload-route-long-fri",
       "name": "Upload Route (Fri)",
       "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
+      "typeVersion": 2,
       "position": [
         2600,
         1520
@@ -1410,7 +1394,7 @@
       "id": "discord-success-am",
       "name": "Discord Success (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         -40
@@ -1427,7 +1411,7 @@
       "id": "discord-success-pm",
       "name": "Discord Success (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         460
@@ -1444,7 +1428,7 @@
       "id": "discord-success-long-tue",
       "name": "Discord Success (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         960
@@ -1461,7 +1445,7 @@
       "id": "discord-success-long-fri",
       "name": "Discord Success (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         1460
@@ -1478,7 +1462,7 @@
       "id": "discord-quota-am",
       "name": "Discord Quota (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         20
@@ -1495,7 +1479,7 @@
       "id": "discord-quota-pm",
       "name": "Discord Quota (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         520
@@ -1512,7 +1496,7 @@
       "id": "discord-quota-long-tue",
       "name": "Discord Quota (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         1020
@@ -1529,7 +1513,7 @@
       "id": "discord-quota-long-fri",
       "name": "Discord Quota (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         2840,
         1520
@@ -1606,7 +1590,7 @@
       "id": "retry-upload-am-req",
       "name": "Retry Upload (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3080,
         80
@@ -1627,7 +1611,7 @@
       "id": "retry-upload-pm-req",
       "name": "Retry Upload (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3080,
         580
@@ -1648,7 +1632,7 @@
       "id": "retry-upload-long-tue-req",
       "name": "Retry Upload (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3080,
         1080
@@ -1669,7 +1653,7 @@
       "id": "retry-upload-long-fri-req",
       "name": "Retry Upload (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3080,
         1580
@@ -1742,7 +1726,7 @@
       "id": "discord-send-retry-upload-am",
       "name": "Discord Send Retry Result (AM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3560,
         80
@@ -1759,7 +1743,7 @@
       "id": "discord-send-retry-upload-pm",
       "name": "Discord Send Retry Result (PM)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3560,
         580
@@ -1776,7 +1760,7 @@
       "id": "discord-send-retry-upload-long-tue",
       "name": "Discord Send Retry Result (Tue)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3560,
         1080
@@ -1793,7 +1777,7 @@
       "id": "discord-send-retry-upload-long-fri",
       "name": "Discord Send Retry Result (Fri)",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.1,
       "position": [
         3560,
         1580
