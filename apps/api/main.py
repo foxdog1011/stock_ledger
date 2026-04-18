@@ -34,6 +34,7 @@ from .routers import quotes_refresh, digest as digest_router
 from .routers import calendar as calendar_router
 from .routers import video_gen
 from .routers import youtube_upload
+from .routers import trump_put
 
 logger = logging.getLogger(__name__)
 
@@ -362,6 +363,7 @@ app.include_router(rating.router,            prefix=PREFIX, tags=["rating"])
 app.include_router(advanced_valuation.router, prefix=PREFIX, tags=["valuation"])
 app.include_router(video_gen.router,         prefix=PREFIX, tags=["video-gen"])
 app.include_router(youtube_upload.router,    prefix=PREFIX, tags=["youtube"])
+app.include_router(trump_put.router,        prefix=PREFIX, tags=["trump-put"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

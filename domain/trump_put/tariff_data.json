@@ -1,0 +1,21 @@
+[
+  {"date": "2025-01-20", "target": "Global", "rate": null, "prev_rate": 0, "status": "threatened", "category": "Universal tariff threats begin", "source": "Inauguration speech"},
+  {"date": "2025-02-01", "target": "Canada/Mexico", "rate": 25, "prev_rate": 0, "status": "announced", "category": "All goods", "source": "Executive Order"},
+  {"date": "2025-02-04", "target": "Canada/Mexico", "rate": 25, "prev_rate": 0, "status": "paused", "category": "All goods — 1 month pause after market drop", "source": "White House statement"},
+  {"date": "2025-03-04", "target": "Canada/Mexico", "rate": 25, "prev_rate": 0, "status": "effective", "category": "All goods", "source": "Executive Order"},
+  {"date": "2025-03-04", "target": "China", "rate": 20, "prev_rate": 10, "status": "effective", "category": "Additional 10% on all Chinese goods", "source": "Executive Order"},
+  {"date": "2025-04-02", "target": "Global", "rate": null, "prev_rate": 0, "status": "effective", "category": "Liberation Day — reciprocal tariffs (10-50% by country)", "source": "Rose Garden speech"},
+  {"date": "2025-04-02", "target": "China", "rate": 145, "prev_rate": 20, "status": "effective", "category": "Cumulative tariff on China", "source": "Executive Order"},
+  {"date": "2025-04-09", "target": "Global (ex-China)", "rate": 10, "prev_rate": null, "status": "paused", "category": "90-day pause on reciprocal tariffs; universal 10% baseline remains", "source": "Truth Social post"},
+  {"date": "2025-04-14", "target": "Electronics", "rate": 0, "prev_rate": null, "status": "exempted", "category": "Smartphones, chips, computers exempted", "source": "CBP guidance"},
+  {"date": "2025-05-12", "target": "China", "rate": 30, "prev_rate": 145, "status": "reduced", "category": "US-China Geneva deal: 90-day reduction", "source": "Joint statement"},
+  {"date": "2025-07-09", "target": "Global (ex-China)", "rate": null, "prev_rate": 10, "status": "expired", "category": "90-day pause expires; most tariffs not reimposed", "source": "USTR guidance"},
+  {"date": "2026-02-01", "target": "Most IEEPA tariffs", "rate": 0, "prev_rate": null, "status": "struck_down", "category": "Supreme Court rules IEEPA tariffs unconstitutional (6-3)", "source": "SCOTUS ruling"},
+  {"date": "2026-02-15", "target": "China", "rate": 15, "prev_rate": 30, "status": "reduced", "category": "Post-SCOTUS residual tariffs under Section 301", "source": "USTR"},
+  {"date": "2026-04-15", "target": "Iran", "rate": null, "prev_rate": null, "status": "effective", "category": "Comprehensive sanctions package amid Iran war", "source": "Executive Order"},
+  {"date": "2026-04-02", "target": "Pharmaceuticals", "rate": 100, "prev_rate": 0, "status": "announced", "category": "Section 232: 100% tariff on patented pharma imports (effective 2026-07-31)", "source": "Presidential Proclamation"},
+  {"date": "2026-04-06", "target": "Steel/Aluminum/Copper", "rate": 50, "prev_rate": 25, "status": "effective", "category": "Section 232 overhaul: 50% on metal articles, 25% on derivatives", "source": "Presidential Proclamation"},
+  {"date": "2026-04-08", "target": "Iran weapon suppliers", "rate": 50, "prev_rate": 0, "status": "threatened", "category": "50% tariff on any country supplying weapons to Iran", "source": "Truth Social post"},
+  {"date": "2026-04-14", "target": "Tariff refunds", "rate": null, "prev_rate": null, "status": "announced", "category": "CBP CAPE system for IEEPA tariff refunds launches 2026-04-20", "source": "CBP announcement"},
+  {"date": "2026-04-14", "target": "Global", "rate": null, "prev_rate": null, "status": "threatened", "category": "Bessent: tariff rates could be restored to previous levels by early July", "source": "Bloomberg"}
+]

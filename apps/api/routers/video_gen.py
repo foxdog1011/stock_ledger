@@ -94,6 +94,12 @@ def _setup_matplotlib_fonts() -> None:
     # Find the first available CJK font file
     import glob as _glob
     candidates = list(_NOTO_SANS_CJK_PATHS)
+    # Windows CJK fonts
+    candidates += [
+        "C:/Windows/Fonts/msjh.ttc",    # Microsoft JhengHei (繁體)
+        "C:/Windows/Fonts/msyh.ttc",    # Microsoft YaHei (簡體)
+        "C:/Windows/Fonts/mingliu.ttc", # MingLiU
+    ]
     candidates += _glob.glob("/usr/share/fonts/**/*SansCJK*.ttc", recursive=True)
     candidates += _glob.glob("/usr/share/fonts/**/*SansCJK*.otf", recursive=True)
 
@@ -503,6 +509,43 @@ def make_thumbnail(
     return buf.getvalue()
 
 
+# ── OpenAI script generation ──────────────────────────────────────────────────
+
+
+def _openai_script(prompt: str, max_tokens: int = 500) -> str:
+    """Generate a narration script via OpenAI gpt-4o-mini."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        return prompt  # fallback: use prompt as script
+
+    import urllib.request as _ur
+    payload = json.dumps({
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": "你是專業台股分析 YouTuber，語氣活潑但專業。"},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+    }).encode()
+    req = _ur.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with _ur.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        logger.exception("OpenAI script generation failed")
+        return prompt
+
+
 # ── Script cleaning ────────────────────────────────────────────────────────────
 
 import re as _re
@@ -655,8 +698,9 @@ def _get_audio_duration(audio_path: str) -> float:
     ff = imageio_ffmpeg.get_ffmpeg_exe().replace("ffmpeg", "ffprobe")
     if not Path(ff).exists():
         ff = imageio_ffmpeg.get_ffmpeg_exe()  # use ffmpeg -i as fallback
-        r = subprocess.run([ff, "-i", audio_path], capture_output=True, text=True)
-        for line in r.stderr.splitlines():
+        r = subprocess.run([ff, "-i", audio_path], capture_output=True)
+        stderr = r.stderr.decode("utf-8", errors="replace") if r.stderr else ""
+        for line in stderr.splitlines():
             if "Duration" in line:
                 t = line.split("Duration:")[1].split(",")[0].strip()
                 h, m, s = t.split(":")
@@ -665,9 +709,9 @@ def _get_audio_duration(audio_path: str) -> float:
     r = subprocess.run(
         [ff, "-v", "quiet", "-show_entries", "format=duration",
          "-of", "csv=p=0", audio_path],
-        capture_output=True, text=True,
+        capture_output=True,
     )
-    return float(r.stdout.strip() or 0)
+    return float(r.stdout.decode("utf-8", errors="replace").strip() or 0)
 
 
 def _build_mp4(
@@ -738,10 +782,11 @@ def _build_mp4(
              "-map", "0:v:0",
              "-map", "1:a:0",
              output],
-            capture_output=True, text=True,
+            capture_output=True,
         )
         if result.returncode != 0:
-            logger.warning("ffmpeg merge failed (%d): %s", result.returncode, result.stderr[-500:])
+            err_msg = result.stderr.decode("utf-8", errors="replace")[-500:] if result.stderr else ""
+            logger.warning("ffmpeg merge failed (%d): %s", result.returncode, err_msg)
             import shutil
             shutil.copy(silent, output)
     except Exception:
@@ -863,8 +908,8 @@ def _make_sector_breakdown_chart(symbols_data: list[dict], days: int) -> np.ndar
                 bar.get_y() + bar.get_height() / 2,
                 f"{sign}{val:,}", va="center", color=_TEXT, fontproperties=_fp(18))
 
-    ax.set_title("各股外資買賣超（千張）", fontproperties=_fp(28), color=_TEXT, pad=16)
-    ax.set_xlabel("千張", fontproperties=_fp(20), color=_MUTED)
+    ax.set_title("各股外資買賣超（張）", fontproperties=_fp(28), color=_TEXT, pad=16)
+    ax.set_xlabel("張", fontproperties=_fp(20), color=_MUTED)
     ax.tick_params(colors=_MUTED, labelsize=16)
     for tick in ax.get_yticklabels():
         tick.set_fontproperties(_fp(18))
@@ -936,7 +981,12 @@ def _make_shorts_slide(
     ax.text(0.5, 0.98, "JARVIS 選股", transform=ax.transAxes,
             ha="center", va="center", color=_ACCENT, fontproperties=_fp(26), fontweight="bold")
     ax.axhline(0.955, xmin=0.05, xmax=0.95, color=_ACCENT, lw=3)
-    ax.text(0.5, 0.925, f"{company_name}（{symbol}）三大法人週報",
+    # If symbol == company_name (sector mode), show simpler header
+    if symbol == company_name or not symbol.isdigit():
+        header_text = f"{company_name} 三大法人週報"
+    else:
+        header_text = f"{company_name}（{symbol}）三大法人週報"
+    ax.text(0.5, 0.925, header_text,
             transform=ax.transAxes, ha="center", va="center",
             color=_TEXT, fontproperties=_fp(40), fontweight="bold")
     ax.text(0.5, 0.89, date_range, transform=ax.transAxes,
@@ -1135,13 +1185,14 @@ def generate_video(req: VideoRequest) -> FileResponse:
         audio = None
 
     # ── Write video ───────────────────────────────────────────────────────────
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir="/tmp")
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir=tempfile.gettempdir())
     tmp.close()
 
     if not is_shorts:
         try:
             png_bytes = make_thumbnail(thumb_label, thumb_company, foreign_net_k, date_range)
-            Path(f"/tmp/{thumb_label}_thumbnail.png").write_bytes(png_bytes)
+            thumb_path = Path(tempfile.gettempdir()) / f"{thumb_label}_thumbnail.png"
+            thumb_path.write_bytes(png_bytes)
         except Exception:
             logger.exception("Thumbnail generation failed — continuing without")
 
@@ -1636,4 +1687,259 @@ def n8n_upload_youtube(req: N8nUploadRequest):
         title=req.title,
         privacy=privacy,
         publish_at=publish_at,
+    )
+
+
+# ── Sector endpoints for n8n weekend/Tuesday workflows ────────────────────────
+
+
+class PickSectorRequest(BaseModel):
+    exclude_themes: list[str] = []
+    force_refresh: bool = False
+
+
+class PickSectorResponse(BaseModel):
+    sector_name: str
+    symbols: list[dict]
+    slot: str
+    summary: dict
+
+
+@router.post(
+    "/video-gen/pick-sector-smart",
+    summary="Pick best sector for a video (stateless, for n8n)",
+    response_model=PickSectorResponse,
+)
+def pick_sector_smart(req: PickSectorRequest):
+    """Score all sector groups by chip activity and return the most active one.
+
+    Used by n8n for Saturday/Sunday族群分析 and Tuesday族群分析.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    exclude = set(t.strip() for t in req.exclude_themes)
+    candidates = {
+        name: syms for name, syms in SECTOR_SYMBOLS.items()
+        if name not in exclude
+    }
+
+    if not candidates:
+        raise HTTPException(400, "All sectors excluded")
+
+    # Score each sector by total absolute chip volume
+    sector_scores: list[dict] = []
+    for sector_name, symbols in candidates.items():
+        try:
+            sector_data = _get_sector_chip(symbols, sector_name, days=5)
+            summary = sector_data["summary"]
+            abs_volume = (
+                abs(summary.get("foreign_net_total", 0))
+                + abs(summary.get("investment_trust_net_total", 0))
+                + abs(summary.get("dealer_net_total", 0))
+            )
+            sector_scores.append({
+                "sector_name": sector_name,
+                "symbols": sector_data["symbols"],
+                "summary": summary,
+                "abs_volume": abs_volume,
+            })
+        except Exception:
+            logger.warning("Sector scoring failed for %s", sector_name)
+
+    if not sector_scores:
+        raise HTTPException(502, "No sector data available")
+
+    # Pick the sector with highest absolute chip activity
+    best = max(sector_scores, key=lambda x: x["abs_volume"])
+
+    # Determine slot based on day of week
+    today = date.today()
+    weekday = today.weekday()
+    if weekday == 1:  # Tuesday
+        slot = "long_tuesday"
+    elif weekday == 5:  # Saturday
+        slot = "weekend_am"
+    elif weekday == 6:  # Sunday
+        slot = "weekend_pm"
+    else:
+        slot = "sector"
+
+    return PickSectorResponse(
+        sector_name=best["sector_name"],
+        symbols=best["symbols"],
+        slot=slot,
+        summary=best["summary"],
+    )
+
+
+class GenerateSectorRequest(BaseModel):
+    sector_name: str
+    slot: str = "sector"
+    format: str = "landscape"  # "landscape" (1920×1080) | "shorts" (1080×1920)
+
+
+class GenerateSectorResponse(BaseModel):
+    video_path: str
+    thumbnail_path: Optional[str] = None
+    title: str
+    description: str
+    tags: list[str]
+    script: str
+    sector_name: str
+    slot: str
+
+
+@router.post(
+    "/video-gen/generate-sector",
+    summary="Generate sector analysis video (for n8n)",
+    response_model=GenerateSectorResponse,
+)
+def generate_sector_video(req: GenerateSectorRequest):
+    """Generate a sector/族群 analysis video with chip data.
+
+    1. Fetch chip data for all symbols in the sector
+    2. Build slides (title + breakdown chart + cumulative chart)
+    3. Generate OpenAI script
+    4. TTS + ffmpeg → MP4
+    """
+    sector_name = req.sector_name
+    if sector_name not in SECTOR_SYMBOLS:
+        raise HTTPException(400, f"Unknown sector: {sector_name}")
+
+    symbols = SECTOR_SYMBOLS[sector_name]
+    days = 5
+
+    # Fetch sector chip data
+    sector_data = _get_sector_chip(symbols, sector_name, days)
+    summary = sector_data["summary"]
+    daily = sector_data["daily"]
+    sym_list = sector_data["symbols"]
+
+    if not daily:
+        raise HTTPException(502, f"No chip data for sector {sector_name}")
+
+    date_range = f"{daily[0]['date']} ~ {daily[-1]['date']}"
+
+    is_shorts = req.format.lower() == "shorts"
+
+    # Build slides
+    _setup_matplotlib_fonts()
+
+    # Re-fetch per-symbol daily for breakdown chart
+    symbols_data: list[dict] = []
+    for s in sym_list:
+        try:
+            sd = _get_chip_data(s["symbol"], days)
+            symbols_data.append({**s, **sd})
+        except Exception:
+            pass
+
+    # Generate script via OpenAI
+    foreign = summary.get("foreign_net_total", 0)
+    trust = summary.get("investment_trust_net_total", 0)
+    dealer = summary.get("dealer_net_total", 0)
+    f_sign = "買超" if foreign >= 0 else "賣超"
+    t_sign = "買超" if trust >= 0 else "賣超"
+    d_sign = "買超" if dealer >= 0 else "賣超"
+
+    # Convert 股 → 張 (1張 = 1000股)
+    foreign_k = round(foreign / 1000)
+    trust_k = round(trust / 1000)
+    dealer_k = round(dealer / 1000)
+
+    if is_shorts:
+        # Shorts: single portrait slide, 60-second script
+        slide = _make_shorts_slide(
+            f"{sector_name}族群", f"{sector_name}族群", date_range, summary, daily,
+        )
+        frames = [(slide, 58)]
+
+        prompt = (
+            f"你是台股分析 YouTuber。請用 60 秒口語化的中文講稿，快速分析"
+            f"「{sector_name}」族群本週三大法人動態。\n"
+            f"成分股：{'、'.join(s['name'] for s in sym_list)}\n"
+            f"外資合計{f_sign} {abs(foreign_k):,} 張，"
+            f"投信合計{t_sign} {abs(trust_k):,} 張。\n"
+            f"請給出族群趨勢判斷和重點觀察。語氣活潑但專業。"
+        )
+        script = _openai_script(prompt, max_tokens=500)
+    else:
+        # Long-form: 5 slides, 4-5 minute script
+        slide1 = _make_sector_title_slide(sector_name, sym_list, date_range)
+        slide2 = _make_foreign_chart(daily)
+        slide3 = _make_trust_dealer_chart(daily)
+        slide4 = _make_sector_breakdown_chart(symbols_data, days)
+        slide5 = _make_summary_slide(summary, date_range)
+
+        frames = [
+            (slide1, SLIDE_SECONDS["title"]),
+            (slide2, SLIDE_SECONDS["chart"]),
+            (slide3, SLIDE_SECONDS["chart"]),
+            (slide4, SLIDE_SECONDS["chart"]),
+            (slide5, SLIDE_SECONDS["summary"]),
+        ]
+
+        prompt = (
+            f"你是台股分析 YouTuber。請寫一篇至少 1200 字的口語化中文講稿（約 4-5 分鐘），"
+            f"深入分析「{sector_name}」族群本週三大法人動態。\n\n"
+            f"成分股：{'、'.join(s['name'] for s in sym_list)}\n"
+            f"外資合計{f_sign} {abs(foreign_k):,} 張，"
+            f"投信合計{t_sign} {abs(trust_k):,} 張，"
+            f"自營商合計{d_sign} {abs(dealer_k):,} 張。\n\n"
+            f"請依以下段落詳細展開（每段至少 200 字）：\n"
+            f"1) 開場與本週總覽\n"
+            f"2) 外資動向解讀：每日進出節奏、可能原因\n"
+            f"3) 投信與自營商動態：是否與外資同向、背離原因\n"
+            f"4) 個股亮點：哪些成分股被特別加碼或減碼\n"
+            f"5) 下週展望與操作建議\n\n"
+            f"重要：講稿必須至少 1200 字，語氣活潑但專業，適合 YouTube 長片觀眾。"
+        )
+        script = _openai_script(prompt, max_tokens=2500)
+
+    # TTS
+    tts_rate = "+35%" if is_shorts else None
+    spoken = _clean_script_for_tts(script)
+    if is_shorts:
+        spoken = spoken[:500]
+    audio_bytes = _tts_edge(spoken, rate=tts_rate)
+    if not audio_bytes:
+        logger.warning("TTS failed for sector %s — generating video without audio", sector_name)
+
+    # Build MP4
+    import tempfile
+    video_path = os.path.join(
+        tempfile.gettempdir(),
+        f"sector_{sector_name}_{date.today().strftime('%Y%m%d')}.mp4",
+    )
+    _build_mp4(frames, audio_bytes, video_path)
+
+    if not Path(video_path).exists():
+        raise HTTPException(500, "Video generation failed")
+
+    # Build metadata
+    if is_shorts:
+        title = f"{sector_name}族群 外資{f_sign}{abs(foreign_k):,}張｜JARVIS 選股 #Shorts"
+    else:
+        title = f"{sector_name}族群週報 外資{f_sign}{abs(foreign_k):,}張｜JARVIS 選股"
+    description = (
+        f"{sector_name}族群 三大法人籌碼分析\n\n"
+        f"{script}\n\n"
+        f"成分股：{'、'.join(s['symbol'] + ' ' + s['name'] for s in sym_list)}\n\n"
+        f"訂閱 JARVIS 選股｜每天更新\n"
+        f"免責聲明：本內容僅供參考，不構成投資建議。\n\n"
+        f"#台股 #{sector_name} #三大法人 #籌碼分析 #族群分析 #JARVIS選股"
+    )
+    tags = [
+        "台股", sector_name, "三大法人", "籌碼分析", "族群分析",
+        "外資", "投信", "JARVIS選股", "台股分析", "法人動態",
+    ] + [s["symbol"] for s in sym_list]
+
+    return GenerateSectorResponse(
+        video_path=video_path,
+        title=title,
+        description=description,
+        tags=tags,
+        script=script,
+        sector_name=sector_name,
+        slot=req.slot,
     )

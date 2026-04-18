@@ -49,3 +49,12 @@ aws/terraform/terraform.tfvars
 # Coverage
 .coverage
 htmlcov/
+
+# n8n workflows (contain webhook secrets)
+scripts/n8n_*.json
+scripts/*_export.json*
+
+# Local scripts & logs
+scripts/watchdog.py
+scripts/start_watchdog.bat
+logs/
