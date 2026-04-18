@@ -26,10 +26,10 @@ def _tmp_db() -> str:
 def _make_hist_df(n: int = 200):
     import pandas as pd
     import numpy as np
-    dates = pd.date_range(end=date.today(), periods=n, freq="B")
+    dates = pd.bdate_range(end=date.today(), periods=n)
     rng = np.random.default_rng(42)
-    close = 100 + rng.standard_normal(n).cumsum() * 0.5
-    return pd.DataFrame({"Close": close, "Volume": [1_000_000] * n}, index=dates)
+    close = 100 + rng.standard_normal(len(dates)).cumsum() * 0.5
+    return pd.DataFrame({"Close": close, "Volume": [1_000_000] * len(dates)}, index=dates)
 
 
 # ── get_quote ─────────────────────────────────────────────────────────────────
