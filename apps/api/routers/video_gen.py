@@ -32,8 +32,8 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from PIL import Image
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from PIL import ImageDraw, ImageFont
@@ -522,7 +522,7 @@ def _openai_script(prompt: str, max_tokens: int = 500) -> str:
     payload = json.dumps({
         "model": "gpt-4o-mini",
         "messages": [
-            {"role": "system", "content": "你是專業台股分析 YouTuber，語氣活潑但專業。"},
+            {"role": "system", "content": "你是專業台股分析 YouTuber，語氣活潑但專業。嚴禁給出買賣建議、進場時機、目標價等任何投資建議。僅分析籌碼數據事實。"},
             {"role": "user", "content": prompt},
         ],
         "max_tokens": max_tokens,
@@ -1726,6 +1726,122 @@ def n8n_upload_youtube(req: N8nUploadRequest):
         privacy=privacy,
         publish_at=publish_at,
     )
+
+
+@router.post(
+    "/video-gen/upload-youtube-form",
+    summary="Upload video file to YouTube via multipart form (alternative to JSON)",
+    response_model=N8nUploadResponse,
+)
+async def n8n_upload_youtube_form(
+    file: UploadFile = File(..., description="MP4 video file"),
+    title: str = Form(..., description="YouTube video title"),
+    description: str = Form("", description="Video description"),
+    tags: str = Form("", description="Comma-separated tags"),
+    privacy: str = Form("private", description="public | unlisted | private"),
+    slot: str = Form("morning", description="Slot type for playlist routing"),
+    publish_time: Optional[str] = Form(None, description="HH:MM publish time"),
+    thumbnail: UploadFile | None = File(None, description="Thumbnail PNG"),
+) -> JSONResponse:
+    """Upload video to YouTube via multipart form data.
+
+    This is an alternative to the JSON-body endpoint for cases where
+    the video file needs to be uploaded directly (not from a path on disk).
+    All text fields must be UTF-8 encoded.
+    """
+    from apps.api.routers.youtube_upload import (
+        _build_youtube_client,
+        _upload_video,
+        _set_thumbnail,
+        _ensure_playlists,
+        _add_to_playlist,
+    )
+
+    privacy = privacy.lower()
+    if privacy not in ("public", "unlisted", "private"):
+        raise HTTPException(400, "privacy must be public, unlisted, or private")
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    # Save uploaded file to temp path
+    tmp_video = tempfile.NamedTemporaryFile(
+        suffix=".mp4", delete=False, dir=tempfile.gettempdir(),
+    )
+    tmp_video.write(await file.read())
+    tmp_video.close()
+    video_path = tmp_video.name
+
+    tmp_thumb_path: str | None = None
+    if thumbnail:
+        tmp_thumb = tempfile.NamedTemporaryFile(
+            suffix=".png", delete=False, dir=tempfile.gettempdir(),
+        )
+        tmp_thumb.write(await thumbnail.read())
+        tmp_thumb.close()
+        tmp_thumb_path = tmp_thumb.name
+
+    is_shorts = slot in _SHORTS_SLOTS
+
+    # Compute publishAt if publish_time provided
+    publish_at: str | None = None
+    if publish_time:
+        try:
+            from datetime import datetime, date as _date, timezone, timedelta
+            hour, minute = (int(x) for x in publish_time.split(":"))
+            today = _date.today()
+            taipei_tz = timezone(timedelta(hours=8))
+            publish_dt = datetime(today.year, today.month, today.day,
+                                 hour, minute, 0, tzinfo=taipei_tz)
+            publish_at = publish_dt.isoformat()
+            privacy = "private"
+        except (ValueError, TypeError):
+            logger.warning("Could not parse publish_time: %s", publish_time)
+
+    try:
+        youtube = _build_youtube_client()
+        video_id = _upload_video(
+            youtube, video_path, title[:100], description,
+            tag_list, privacy, publish_at,
+        )
+
+        if tmp_thumb_path:
+            try:
+                _set_thumbnail(youtube, video_id, tmp_thumb_path)
+            except Exception:
+                logger.exception("Thumbnail upload failed — continuing")
+
+        slot_playlist_map = {
+            "morning": "每日快報",
+            "afternoon": "每日快報",
+            "long_tuesday": "個股分析",
+            "long_friday": "大盤週報",
+        }
+        playlist_name = slot_playlist_map.get(slot)
+        if playlist_name:
+            try:
+                playlists = _ensure_playlists(youtube)
+                pid = playlists.get(playlist_name)
+                if pid:
+                    _add_to_playlist(youtube, video_id, pid)
+            except Exception:
+                logger.exception("Playlist add failed — continuing")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"YouTube upload failed: {exc}") from exc
+    finally:
+        _cleanup_file(video_path)
+        if tmp_thumb_path:
+            _cleanup_file(tmp_thumb_path)
+
+    return JSONResponse({
+        "video_id": video_id,
+        "url": f"https://youtu.be/{video_id}",
+        "title": title,
+        "privacy": privacy,
+        "publish_at": publish_at,
+    })
 
 
 # ── Sector endpoints for n8n weekend/Tuesday workflows ────────────────────────

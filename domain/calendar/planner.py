@@ -151,31 +151,31 @@ def _generate_title(template_type: str, symbol: str, data: dict, sector_name: st
     if template_type == "abs_volume":
         lots = _format_lots(abs_vol)
         if momentum > 0:
-            title = f"法人狂買 {symbol}！成交 {lots} 張 散戶該跟嗎？"
+            title = f"法人狂買 {symbol}！成交 {lots} 張 什麼訊號？"
         else:
             title = f"法人砍殺 {symbol} 共 {lots} 張！發生什麼事？"
 
     elif template_type == "momentum":
         lots = _format_lots(momentum)
         if momentum > 0:
-            title = f"法人連買 {symbol} 淨買超 {lots} 張 還能追嗎？"
+            title = f"法人連買 {symbol} 淨買超 {lots} 張 籌碼面解讀"
         else:
-            title = f"{symbol} 被法人倒貨 {lots} 張 底部訊號？"
+            title = f"{symbol} 被法人倒貨 {lots} 張 籌碼怎麼看？"
 
     elif template_type == "reversal":
         lots = _format_lots(reversal)
-        title = f"突發！{symbol} 單日爆量 {lots} 張 反轉訊號來了？"
+        title = f"突發！{symbol} 單日爆量 {lots} 張 異常訊號解析"
 
     elif template_type == "trust_surge":
         lots = _format_lots(trust_surge)
-        title = f"投信狂掃 {symbol} {lots} 張！跟著投信買？"
+        title = f"投信狂掃 {symbol} {lots} 張！籌碼面完整解讀"
 
     elif template_type == "sector":
         lots = _format_lots(foreign_net)
         if foreign_net > 0:
-            title = f"{sector_name}族群外資大舉進場！買超 {lots} 張"
+            title = f"{sector_name}族群外資大量買超！累計 {lots} 張"
         else:
-            title = f"外資撤離{sector_name}！{lots} 張大逃殺"
+            title = f"外資撤離{sector_name}！{lots} 張大量賣出"
 
     elif template_type == "breaking":
         lots = _format_lots(max(reversal, trust_surge))
@@ -319,9 +319,9 @@ def plan_week(
         week_symbols.append(pick["symbol"])
     pick_summary = "、".join(week_symbols) if week_symbols else "本週精選"
 
-    review_title = f"本週選股回顧｜{pick_summary} 表現如何？該續抱還是停損？"
+    review_title = f"本週選股回顧｜{pick_summary} 法人籌碼變化追蹤"
     if len(review_title) > 60:
-        review_title = f"本週 {len(week_symbols)} 檔選股回顧｜該續抱還是停損？"
+        review_title = f"本週 {len(week_symbols)} 檔選股回顧｜法人籌碼追蹤"
 
     _add(fri, "macro", {
         "title": review_title,

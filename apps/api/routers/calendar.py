@@ -251,8 +251,8 @@ def _generate_script(episode: dict) -> str:
     if is_shorts:
         structure = (
             "1. 開場（10秒衝擊性數字）\n"
-            "2. 核心結論（30秒）\n"
-            "3. 一句話建議\n"
+            "2. 核心籌碼數據解讀（30秒）\n"
+            "3. 一句話總結現象\n"
             "4. CTA（訂閱+留言）\n\n"
             "語氣：快速直接。"
         )
@@ -261,7 +261,7 @@ def _generate_script(episode: dict) -> str:
             "1. 突發新聞開場（10秒，用數據衝擊觀眾）\n"
             "2. 異常訊號解讀（為什麼法人突然大量進出）\n"
             "3. 歷史類似情況對比\n"
-            "4. 散戶應對策略\n"
+            "4. 數據總結與風險提醒\n"
             "5. CTA（訂閱+開啟小鈴鐺）\n\n"
             "語氣：緊迫但理性，像財經快報。"
         )
@@ -279,7 +279,7 @@ def _generate_script(episode: dict) -> str:
             "1. 開場 Hook（前15秒讓人想繼續看）\n"
             "2. 籌碼重點解讀\n"
             "3. 市場訊號解讀\n"
-            "4. 對散戶的操作建議（具體但不構成投資建議）\n"
+            "4. 數據總結與注意事項\n"
             "5. 結尾 CTA（訂閱+留言）\n\n"
             "語氣：像朋友在聊天，有觀點、有數據。"
         )
@@ -291,6 +291,9 @@ def _generate_script(episode: dict) -> str:
         f"選題原因：{reason}\n\n"
         f"請寫一支 {duration} 影片腳本：\n"
         f"{structure}\n\n"
+        f"重要規則：嚴禁給出買賣建議、進場時機、目標價、停損點等任何投資建議。"
+        f"不可使用「建議買進」「建議賣出」「可以買」「進場」「加碼」「看漲」「看跌」等用語。"
+        f"僅分析籌碼數據事實與法人動向，讓觀眾自行判斷。\n\n"
         f"不要加任何小標題或段落標號，直接寫口語化的台詞。"
     )
 
@@ -476,7 +479,7 @@ def _build_algo_title(
             hook = f"外資連 {consec_buy} 買 累計 {lots_str} 張！"
         else:
             hook = f"外資買超 {lots_str} 張！"
-        question = "三大法人都在搶？" if trust_k > 0 else "散戶該跟嗎？"
+        question = "三大法人同步買超？" if trust_k > 0 else "什麼訊號？"
     else:
         if abs_foreign >= 10000:
             hook = f"外資狂賣 {lots_str} 張！"
@@ -484,7 +487,7 @@ def _build_algo_title(
             hook = f"外資連 {consec_sell} 賣 累計 {lots_str} 張！"
         else:
             hook = f"外資賣超 {lots_str} 張！"
-        question = "法人大逃殺什麼訊號？" if trust_k < 0 else "散戶該注意什麼？"
+        question = "法人大量賣出什麼訊號？" if trust_k < 0 else "籌碼面怎麼看？"
 
     if ctype == "sector":
         sector = episode.get("sector_name") or ""
@@ -522,7 +525,7 @@ def _build_algo_description(
         parts.append(f"{subject} 三大法人動態速報！")
         parts.append("📊 JARVIS 選股｜每天 60 秒掌握法人籌碼")
         parts.append("")
-        parts.append(f"⚠️ 免責聲明：本頻道內容僅供參考，不構成投資建議。")
+        parts.append(f"⚠️ 免責聲明：本頻道內容僅供參考，不構成任何投資建議。投資有風險，請自行評估。")
         parts.append("")
         hashtags = ["#台股", "#三大法人", "#Shorts", "#籌碼分析", "#外資", "#投信"]
         if symbol:
@@ -553,15 +556,15 @@ def _build_algo_description(
         parts.append("00:00 開場｜本週發生什麼事？")
         parts.append("00:30 外資籌碼解讀")
         parts.append("01:30 投信＋自營動向")
-        parts.append("02:30 綜合判斷與操作建議")
+        parts.append("02:30 綜合判斷與籌碼解讀")
         parts.append("03:30 總結")
         parts.append("")
 
     parts.append("📈 JARVIS 選股 — AI 驅動台股籌碼分析")
     parts.append("🔔 訂閱開啟小鈴鐺，每天掌握法人動態！")
     parts.append("")
-    parts.append("⚠️ 免責聲明：本頻道內容僅供參考，不構成投資建議。")
-    parts.append("投資有風險，請自行評估。")
+    parts.append("⚠️ 免責聲明：本頻道內容僅供參考，不構成任何投資建議。")
+    parts.append("投資有風險，請自行評估。本頻道不提供買賣建議。")
     parts.append("")
 
     # SEO keywords block
@@ -569,7 +572,7 @@ def _build_algo_description(
     if symbol:
         kw.extend([
             f"{symbol} 分析", f"{symbol} 三大法人",
-            f"{company_name}可以買嗎", f"{company_name}法人",
+            f"{company_name}籌碼分析", f"{company_name}法人",
         ])
     if sector:
         kw.extend([f"{sector}族群", f"{sector}概念股"])
@@ -598,7 +601,7 @@ def _build_algo_tags(episode: dict, company_name: str, is_shorts: bool) -> list[
 
     if symbol:
         tags.extend([
-            symbol, f"{symbol}分析", f"{symbol}可以買嗎",
+            symbol, f"{symbol}分析", f"{symbol}籌碼",
             company_name, f"{company_name}分析", f"{company_name}法人",
             f"{company_name}外資", f"{company_name}籌碼",
             f"{company_name}股價", f"{company_name}2026",

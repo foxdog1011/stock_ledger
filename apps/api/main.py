@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -310,6 +311,67 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Handle validation errors safely on Windows (cp950 locale).
+
+    FastAPI's default handler can crash with UnicodeDecodeError when
+    validation error details contain bytes encoded in the system's
+    default encoding (cp950 on zh-TW Windows) instead of UTF-8.
+    This handler safely converts all error detail values to strings.
+    """
+    safe_errors = []
+    for error in exc.errors():
+        safe_error = {}
+        for key, value in error.items():
+            if isinstance(value, bytes):
+                safe_error[key] = value.decode("utf-8", errors="replace")
+            elif isinstance(value, (list, tuple)):
+                safe_error[key] = [
+                    item.decode("utf-8", errors="replace")
+                    if isinstance(item, bytes) else item
+                    for item in value
+                ]
+            else:
+                safe_error[key] = value
+        safe_errors.append(safe_error)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": safe_errors},
+    )
+
+
+app.add_exception_handler(RequestValidationError, _validation_exception_handler)
+
+
+async def _unicode_error_handler(
+    request: Request, exc: UnicodeDecodeError
+) -> JSONResponse:
+    """Catch UnicodeDecodeError from cp950/utf-8 encoding mismatches on Windows.
+
+    This prevents 500 errors when request data contains bytes that
+    cannot be decoded with the expected encoding (common on Windows
+    where locale defaults to cp950).
+    """
+    logger.warning(
+        "UnicodeDecodeError on %s %s: %s",
+        request.method, request.url.path, exc,
+    )
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": (
+                "Request contains data that could not be decoded as UTF-8. "
+                "Please ensure all text fields are UTF-8 encoded."
+            ),
+        },
+    )
+
+
+app.add_exception_handler(UnicodeDecodeError, _unicode_error_handler)
 
 if DEMO_MODE:
     app.add_middleware(DemoReadOnlyMiddleware)
