@@ -67,7 +67,7 @@ class _TextExtractor(HTMLParser):
 def _detect_source(url: str) -> str:
     """Auto-detect source type from URL."""
     host = urlparse(url).hostname or ""
-    if "threads.net" in host:
+    if "threads.net" in host or "threads.com" in host:
         return "threads"
     if "twitter.com" in host or "x.com" in host:
         return "twitter"
@@ -129,16 +129,77 @@ def _fetch_web(url: str) -> FetchedContent:
 
 
 def _fetch_threads(url: str) -> FetchedContent:
-    """Fetch Threads post. Try Threads API if configured, fallback to web scrape."""
-    # For now, use web fetch as baseline. Threads API requires OAuth setup.
-    content = _fetch_web(url)
+    """Fetch Threads post using crawler User-Agent to get SSR content.
+
+    Threads pages are JS-rendered for normal browsers but return full
+    og:description/og:title meta tags when accessed with a crawler UA
+    like facebookexternalhit/1.1.
+    """
+    import html as html_mod
+
+    # Ensure we use www.threads.com (not .net which redirects)
+    url = url.replace("www.threads.net", "www.threads.com")
+    url = url.replace("threads.net", "www.threads.com")
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "facebookexternalhit/1.1",
+            "Accept": "text/html",
+            "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw_html = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        logger.warning("Threads fetch failed for %s: %s", url, exc)
+        return FetchedContent(url=url, source_type="threads", title="",
+                              text=f"[Fetch failed: {exc}]", author="", images=[])
+
+    # Extract from og: meta tags
+    og_desc = ""
+    og_title = ""
+    og_image = ""
+    m = re.search(r'<meta[^>]+property="og:description"[^>]+content="([^"]*)"', raw_html)
+    if not m:
+        m = re.search(r"<meta[^>]+property=['\"]og:description['\"][^>]+content=['\"]([^'\"]*)['\"]", raw_html)
+    if m:
+        og_desc = html_mod.unescape(m.group(1))
+
+    m = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]*)"', raw_html)
+    if not m:
+        m = re.search(r"<meta[^>]+property=['\"]og:title['\"][^>]+content=['\"]([^'\"]*)['\"]", raw_html)
+    if m:
+        og_title = html_mod.unescape(m.group(1))
+
+    m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]*)"', raw_html)
+    if m:
+        og_image = m.group(1)
+
+    # Extract author from URL path
+    author = ""
+    path_match = re.search(r"/@([^/]+)", url)
+    if path_match:
+        author = path_match.group(1)
+
+    title = og_title or f"Threads post by @{author}" if author else "Threads post"
+    text = og_desc or ""
+
+    # If og: tags are empty, fall back to web scrape
+    if len(text.strip()) < 10:
+        logger.info("Threads og:description empty, falling back to web scrape")
+        fallback = _fetch_web(url)
+        text = fallback.text
+        title = title or fallback.title
+
     return FetchedContent(
-        url=content.url,
+        url=url,
         source_type="threads",
-        title=content.title,
-        text=content.text,
-        author=content.author,
-        images=content.images,
+        title=title[:200],
+        text=text[:5000],
+        author=author,
+        images=[og_image] if og_image else [],
     )
 
 

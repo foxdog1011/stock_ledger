@@ -171,6 +171,7 @@ class TestFetcher:
 
     def test_detect_threads(self) -> None:
         assert _detect_source("https://www.threads.net/@user/post/abc") == "threads"
+        assert _detect_source("https://www.threads.com/@user/post/abc") == "threads"
 
     def test_detect_twitter(self) -> None:
         assert _detect_source("https://x.com/user/status/123") == "twitter"
