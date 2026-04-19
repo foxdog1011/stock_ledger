@@ -7,10 +7,25 @@ Usage:
     python scripts/ingest_url.py "https://..." --api http://EC2:8003/api/knowledge
 """
 import json
+import os
 import sys
 import urllib.request
+from pathlib import Path
 
 DEFAULT_API = "http://localhost:8003/api/knowledge"
+
+
+def _get_api_key() -> str:
+    """Load API key from env or .env file."""
+    key = os.environ.get("JARVIS_KEY", "")
+    if not key:
+        env_path = Path(__file__).resolve().parent.parent / ".env"
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("JARVIS_KEY="):
+                    key = line.split("=", 1)[1].strip()
+                    break
+    return key
 
 
 def main() -> None:
@@ -25,11 +40,15 @@ def main() -> None:
         if arg == "--api" and i + 1 < len(sys.argv):
             api_base = sys.argv[i + 1].rstrip("/")
 
+    api_key = _get_api_key()
+
     # Step 1: Ingest
     payload = json.dumps({"url": url, "source_type": "auto", "notes": ""}).encode()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
     req = urllib.request.Request(
-        f"{api_base}/ingest", data=payload,
-        headers={"Content-Type": "application/json"},
+        f"{api_base}/ingest", data=payload, headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:

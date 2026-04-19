@@ -15,7 +15,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -39,6 +39,18 @@ _DB_PATH = os.environ.get("DB_PATH", "ledger.db")
 
 def _get_db() -> str:
     return os.environ.get("DB_PATH", _DB_PATH)
+
+
+def _check_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> None:
+    """Validate API key for write endpoints (ingest, review, debate).
+
+    Uses JARVIS_KEY env var. If not set, auth is disabled (local dev).
+    """
+    expected = os.environ.get("JARVIS_KEY", "").strip()
+    if not expected:
+        return  # No key configured = local dev mode, skip auth
+    if x_api_key != expected:
+        raise HTTPException(401, "Invalid or missing API key (X-API-Key header)")
 
 
 # ── Request/Response models ─────────────────────────────────────────────────
@@ -67,7 +79,11 @@ class ReviewRequest(BaseModel):
 
 
 @router.post("/knowledge/ingest", summary="Ingest a URL into the knowledge base")
-def ingest_url(req: IngestURLRequest) -> JSONResponse:
+def ingest_url(
+    req: IngestURLRequest,
+    x_api_key: str = Header(None, alias="X-API-Key"),
+) -> JSONResponse:
+    _check_api_key(x_api_key)
     """Fetch content from URL, run AI analysis, save to DB + Obsidian vault.
 
     This is the main one-click ingestion endpoint. Supports Threads, Twitter/X,
@@ -161,7 +177,11 @@ def ingest_url(req: IngestURLRequest) -> JSONResponse:
     "/knowledge/ingest-text",
     summary="Ingest raw text into the knowledge base",
 )
-def ingest_text(req: IngestTextRequest) -> JSONResponse:
+def ingest_text(
+    req: IngestTextRequest,
+    x_api_key: str = Header(None, alias="X-API-Key"),
+) -> JSONResponse:
+    _check_api_key(x_api_key)
     """Manually paste text content for analysis. For content that can't be
     fetched by URL (e.g., screenshots, private messages)."""
     db = _get_db()
@@ -321,7 +341,11 @@ def get_knowledge(entry_id: int) -> JSONResponse:
     "/knowledge/{entry_id}/review",
     summary="Re-run AI review on a knowledge entry",
 )
-def review_entry(entry_id: int) -> JSONResponse:
+def review_entry(
+    entry_id: int,
+    x_api_key: str = Header(None, alias="X-API-Key"),
+) -> JSONResponse:
+    _check_api_key(x_api_key)
     """Re-analyze an existing entry with the AI pipeline."""
     db = _get_db()
     entry = get_entry(db, entry_id)
@@ -359,7 +383,11 @@ def review_entry(entry_id: int) -> JSONResponse:
     "/knowledge/{entry_id}/debate",
     summary="Run deep multi-agent debate on a knowledge entry",
 )
-def debate_entry(entry_id: int) -> JSONResponse:
+def debate_entry(
+    entry_id: int,
+    x_api_key: str = Header(None, alias="X-API-Key"),
+) -> JSONResponse:
+    _check_api_key(x_api_key)
     """Run the 4-agent debate pipeline (Extractor → Bull → Bear → Auditor).
 
     This is the deep review mode — more thorough than /review but uses

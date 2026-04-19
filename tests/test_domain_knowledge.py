@@ -349,3 +349,46 @@ class TestKnowledgeAPI:
             "content": "Too short",
         })
         assert resp.status_code == 400
+
+    def test_ingest_text_rejected_without_key(self, db_path: str) -> None:
+        """Write endpoints require X-API-Key when JARVIS_KEY is set."""
+        from fastapi.testclient import TestClient
+        from apps.api.main import app
+
+        with patch.dict(os.environ, {"JARVIS_KEY": "test-secret-key"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/api/knowledge/ingest-text", json={
+                "title": "Test",
+                "content": "This is a sufficiently long content for ingestion testing purposes.",
+            })
+            assert resp.status_code == 401
+
+    def test_ingest_text_accepted_with_key(self, db_path: str) -> None:
+        """Write endpoints succeed with correct X-API-Key."""
+        from fastapi.testclient import TestClient
+        from apps.api.main import app
+
+        with patch.dict(os.environ, {"JARVIS_KEY": "test-secret-key"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                "/api/knowledge/ingest-text",
+                json={
+                    "title": "Test",
+                    "content": "This is a sufficiently long content for ingestion testing purposes.",
+                },
+                headers={"X-API-Key": "test-secret-key"},
+            )
+            # Should not be 401 (may be 500 if OpenAI key not set, that's fine)
+            assert resp.status_code != 401
+
+    def test_read_endpoints_no_auth_needed(self, db_path: str) -> None:
+        """Read endpoints work without API key even when JARVIS_KEY is set."""
+        from fastapi.testclient import TestClient
+        from apps.api.main import app
+
+        with patch.dict(os.environ, {"JARVIS_KEY": "test-secret-key"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/knowledge")
+            assert resp.status_code == 200
+            resp2 = client.get("/api/knowledge/stats")
+            assert resp2.status_code == 200
