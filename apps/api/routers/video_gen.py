@@ -695,10 +695,15 @@ def _tts_to_mp3(script: str) -> bytes | None:
 def _get_audio_duration(audio_path: str) -> float:
     """Return audio duration in seconds using ffprobe."""
     import imageio_ffmpeg
-    ff = imageio_ffmpeg.get_ffmpeg_exe().replace("ffmpeg", "ffprobe")
-    if not Path(ff).exists():
-        ff = imageio_ffmpeg.get_ffmpeg_exe()  # use ffmpeg -i as fallback
-        r = subprocess.run([ff, "-i", audio_path], capture_output=True)
+    ff_exe = Path(imageio_ffmpeg.get_ffmpeg_exe())
+    # Only replace the filename, not directory names containing "ffmpeg"
+    ffprobe = ff_exe.parent / ff_exe.name.replace("ffmpeg", "ffprobe")
+    if not ffprobe.exists():
+        # Fallback: parse duration from ffmpeg -i stderr
+        r = subprocess.run(
+            [str(ff_exe), "-i", audio_path],
+            capture_output=True, timeout=30,
+        )
         stderr = r.stderr.decode("utf-8", errors="replace") if r.stderr else ""
         for line in stderr.splitlines():
             if "Duration" in line:
@@ -707,10 +712,13 @@ def _get_audio_duration(audio_path: str) -> float:
                 return float(h) * 3600 + float(m) * 60 + float(s)
         return 0.0
     r = subprocess.run(
-        [ff, "-v", "quiet", "-show_entries", "format=duration",
+        [str(ffprobe), "-v", "quiet", "-show_entries", "format=duration",
          "-of", "csv=p=0", audio_path],
-        capture_output=True,
+        capture_output=True, timeout=30,
     )
+    if r.returncode != 0:
+        logger.warning("ffprobe failed (exit %d) for %s", r.returncode, audio_path)
+        return 0.0
     return float(r.stdout.decode("utf-8", errors="replace").strip() or 0)
 
 
@@ -782,7 +790,7 @@ def _build_mp4(
              "-map", "0:v:0",
              "-map", "1:a:0",
              output],
-            capture_output=True,
+            capture_output=True, timeout=120,
         )
         if result.returncode != 0:
             err_msg = result.stderr.decode("utf-8", errors="replace")[-500:] if result.stderr else ""
@@ -1066,10 +1074,10 @@ def _cleanup_file(path: str) -> None:
 
 def _compute_foreign_net_k(summary: dict, daily: list[dict]) -> int:
     """Return total foreign net in 千張 from summary or daily fallback."""
-    total = summary.get("foreign_net_total", 0)
-    if not total and daily:
+    total = summary.get("foreign_net_total")
+    if total is None and daily:
         total = sum(d.get("foreign", {}).get("net", 0) for d in daily)
-    return round(total / 1000)
+    return round((total or 0) / 1000)
 
 
 @router.get("/video/thumbnail", summary="Generate YouTube thumbnail PNG")

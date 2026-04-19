@@ -329,7 +329,7 @@ def _generate_video(episode: dict, script: str) -> str:
         "symbols": episode.get("symbols") or [],
     }
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir="/tmp")
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir=tempfile.gettempdir())
     tmp.close()
 
     req = urllib.request.Request(
@@ -354,7 +354,7 @@ def _generate_thumbnail(episode: dict) -> str | None:
 
     try:
         with urllib.request.urlopen(url, timeout=30) as resp:
-            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir="/tmp")
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=tempfile.gettempdir())
             tmp.write(resp.read())
             tmp.close()
             return tmp.name

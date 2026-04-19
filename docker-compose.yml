@@ -18,6 +18,9 @@ services:
       MCP_URL: "http://mcp:8001/mcp"
       DEMO_MODE: "${DEMO_MODE:-0}"
       JARVIS_KEY: "${JARVIS_KEY:-}"
+      YOUTUBE_CLIENT_ID: "${YOUTUBE_CLIENT_ID:-}"
+      YOUTUBE_CLIENT_SECRET: "${YOUTUBE_CLIENT_SECRET:-}"
+      YOUTUBE_REFRESH_TOKEN: "${YOUTUBE_REFRESH_TOKEN:-}"
     volumes:
       - ledger_data:/data
     restart: unless-stopped

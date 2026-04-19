@@ -70,7 +70,13 @@ def _build_youtube_client():
         client_secret=client_secret,
         scopes=_SCOPES,
     )
-    creds.refresh(Request())
+    try:
+        creds.refresh(Request())
+    except Exception as exc:
+        raise HTTPException(
+            401,
+            f"YouTube token refresh failed — re-run youtube_auth.py: {exc}"
+        ) from exc
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
 
@@ -116,7 +122,15 @@ def _upload_video(
 
     response = None
     while response is None:
-        _, response = request.next_chunk()
+        try:
+            _, response = request.next_chunk(num_retries=3)
+        except Exception as exc:
+            error_str = str(exc)
+            if "quotaExceeded" in error_str or "403" in error_str:
+                raise HTTPException(429, f"YouTube API quota exceeded: {exc}") from exc
+            if "401" in error_str or "invalid_grant" in error_str:
+                raise HTTPException(401, f"YouTube credentials expired: {exc}") from exc
+            raise
 
     return response["id"]
 
@@ -193,13 +207,13 @@ async def youtube_upload(
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
     # Save uploaded files to temp paths
-    tmp_video = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir="/tmp")
+    tmp_video = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir=tempfile.gettempdir())
     tmp_video.write(await file.read())
     tmp_video.close()
 
     tmp_thumb_path: str | None = None
     if thumbnail:
-        tmp_thumb = tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir="/tmp")
+        tmp_thumb = tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=tempfile.gettempdir())
         tmp_thumb.write(await thumbnail.read())
         tmp_thumb.close()
         tmp_thumb_path = tmp_thumb.name
