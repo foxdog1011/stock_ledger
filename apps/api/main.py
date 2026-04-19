@@ -37,6 +37,7 @@ from .routers import video_gen
 from .routers import youtube_upload
 from .routers import trump_put
 from .routers import premarket
+from .routers import knowledge as knowledge_router
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,10 @@ async def lifespan(app: FastAPI):
     from domain.calendar.repository import init_calendar_tables
     init_calendar_tables(DB_PATH)
 
+    # Ensure knowledge tables exist
+    from domain.knowledge.repository import init_knowledge_tables
+    init_knowledge_tables(DB_PATH)
+
     # APScheduler: daily chip data refresh at 17:00 Asia/Taipei
     _scheduler.add_job(
         _run_scheduled_chip_refresh,
@@ -428,6 +433,7 @@ app.include_router(video_gen.router,         prefix=PREFIX, tags=["video-gen"])
 app.include_router(youtube_upload.router,    prefix=PREFIX, tags=["youtube"])
 app.include_router(trump_put.router,        prefix=PREFIX, tags=["trump-put"])
 app.include_router(premarket.router,       prefix=PREFIX, tags=["video-gen"])
+app.include_router(knowledge_router.router, prefix=PREFIX, tags=["knowledge"])
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
