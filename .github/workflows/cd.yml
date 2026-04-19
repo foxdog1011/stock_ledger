@@ -103,8 +103,12 @@ jobs:
             # ── Free disk space before pulling new images ────────────────────
             echo "=== Disk before cleanup ===" && df -h /
 
-            # Stop containers so all images become "unused", then aggressively prune
-            cd /app && docker compose down 2>/dev/null || true
+            # Stop and remove ALL project containers (including orphans)
+            cd /app && docker compose down --remove-orphans --volumes=false 2>/dev/null || true
+            # Force-remove any leftover containers with our names
+            for c in stock-ledger-api stock-ledger-mcp stock-ledger-web; do
+              docker rm -f "$c" 2>/dev/null || true
+            done
             docker system prune -a -f 2>/dev/null || true
             # Also clean OS-level logs and temp files
             sudo journalctl --vacuum-size=50M 2>/dev/null || true
@@ -140,10 +144,14 @@ jobs:
             docker tag $ECR_REGISTRY/stock-ledger-mcp:$IMAGE_TAG $ECR_REGISTRY/stock-ledger-mcp:latest
             docker tag $ECR_REGISTRY/stock-ledger-web:$IMAGE_TAG $ECR_REGISTRY/stock-ledger-web:latest
 
-            # Restart services with zero-downtime rolling update
+            # Restart services
             cd /app
             docker compose pull
             docker compose up -d --remove-orphans
+
+            # Show API startup logs (first 50 lines) for debugging
+            sleep 5
+            docker logs stock-ledger-api --tail 50 2>&1 || true
 
             # Cleanup old images
             docker image prune -f
@@ -152,10 +160,14 @@ jobs:
             # Clone My-TW-Coverage (shallow to save disk) or pull latest
             if [ ! -d /home/ec2-user/My-TW-Coverage ]; then
               git clone --depth 1 https://github.com/Timeverse/My-TW-Coverage.git \
-                /home/ec2-user/My-TW-Coverage
+                /home/ec2-user/My-TW-Coverage || true
             else
-              git -C /home/ec2-user/My-TW-Coverage fetch --depth 1 origin main \
-                && git -C /home/ec2-user/My-TW-Coverage reset --hard origin/main || true
+              cd /home/ec2-user/My-TW-Coverage
+              DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')
+              DEFAULT_BRANCH=${DEFAULT_BRANCH:-master}
+              git fetch --depth 1 origin "$DEFAULT_BRANCH" \
+                && git reset --hard "origin/$DEFAULT_BRANCH" || true
+              cd /app
             fi
             df -h /home  # log disk usage after clone
 
@@ -174,7 +186,7 @@ jobs:
             echo "All containers:" && docker ps -a --format "table {{.Names}}\t{{.Status}}"
 
             # Copy coverage repo into container and run the ingest script
-            docker cp /home/ec2-user/My-TW-Coverage stock-ledger-api:/tmp/My-TW-Coverage
+            docker cp /home/ec2-user/My-TW-Coverage stock-ledger-api:/tmp/My-TW-Coverage 2>/dev/null || true
             docker exec stock-ledger-api python scripts/ingest_coverage.py \
               --repo-path /tmp/My-TW-Coverage \
-              --db-path /data/ledger.db
+              --db-path /data/ledger.db 2>&1 || true
