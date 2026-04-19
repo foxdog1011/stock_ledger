@@ -252,6 +252,45 @@ class TestObsidian:
         assert "Valuation risk" in content
 
 
+# ── Debate module tests ─────────────────────────────────────────────────────
+
+
+class TestDebateModule:
+
+    def test_debate_result_dataclass(self) -> None:
+        from domain.knowledge.debate import DebateResult
+        result = DebateResult(
+            key_claims=["claim1"],
+            data_points=["data1"],
+            tickers=["2330"],
+            thesis="test thesis",
+            bull_arguments=["bull1"],
+            bull_confidence=0.8,
+            bear_arguments=["bear1"],
+            blind_spots=["blind1"],
+            bear_confidence=0.6,
+            quality_tier="high",
+            quality_score=0.85,
+            verdict="Good analysis",
+            contradictions=[],
+            recommendations=["verify data"],
+        )
+        assert result.quality_tier == "high"
+        assert result.tickers == ["2330"]
+        assert len(result.bull_arguments) == 1
+        assert len(result.blind_spots) == 1
+
+    def test_debate_endpoint_not_found(self, db_path: str) -> None:
+        """Debate on nonexistent entry should 404."""
+        from fastapi.testclient import TestClient
+        from apps.api.main import app
+
+        os.environ["DB_PATH"] = db_path
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/knowledge/99999/debate")
+        assert resp.status_code == 404
+
+
 # ── API integration tests ───────────────────────────────────────────────────
 
 

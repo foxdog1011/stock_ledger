@@ -7,6 +7,7 @@ GET  /api/knowledge/{id}         — Get a single entry
 GET  /api/knowledge/search       — Search by ticker or tag
 GET  /api/knowledge/stats        — Knowledge base statistics
 POST /api/knowledge/{id}/review  — Re-run AI review on an entry
+POST /api/knowledge/{id}/debate  — Deep multi-agent debate (4 agents)
 """
 from __future__ import annotations
 
@@ -351,4 +352,77 @@ def review_entry(entry_id: int) -> JSONResponse:
         "bull_case": analysis.bull_case,
         "bear_case": analysis.bear_case,
         "audit_notes": analysis.audit_notes,
+    })
+
+
+@router.post(
+    "/knowledge/{entry_id}/debate",
+    summary="Run deep multi-agent debate on a knowledge entry",
+)
+def debate_entry(entry_id: int) -> JSONResponse:
+    """Run the 4-agent debate pipeline (Extractor → Bull → Bear → Auditor).
+
+    This is the deep review mode — more thorough than /review but uses
+    4x the API calls. Use for important articles that need rigorous validation.
+    """
+    from domain.knowledge.debate import run_debate
+
+    db = _get_db()
+    entry = get_entry(db, entry_id)
+    if not entry:
+        raise HTTPException(404, "知識條目不存在")
+
+    try:
+        result = run_debate(entry.title, entry.content)
+    except Exception as exc:
+        logger.exception("Debate failed for entry %d", entry_id)
+        raise HTTPException(500, f"辯論分析失敗: {exc}") from exc
+
+    # Update the entry with debate results
+    bull_text = "\n".join(f"• {a}" for a in result.bull_arguments)
+    bear_text = "\n".join(f"• {a}" for a in result.bear_arguments)
+    blind_text = "\n".join(f"⚠ {b}" for b in result.blind_spots)
+    audit_text = (
+        f"裁決：{result.verdict}\n"
+        f"矛盾：{'; '.join(result.contradictions) or '無'}\n"
+        f"建議：{'; '.join(result.recommendations) or '無'}"
+    )
+
+    update_review(
+        db_path=db,
+        entry_id=entry_id,
+        quality_tier=result.quality_tier,
+        bull_case=bull_text,
+        bear_case=f"{bear_text}\n\n盲點：\n{blind_text}",
+        audit_notes=audit_text,
+        quality_score=result.quality_score,
+    )
+
+    return JSONResponse({
+        "status": "ok",
+        "id": entry_id,
+        "debate": {
+            "extraction": {
+                "key_claims": result.key_claims,
+                "data_points": result.data_points,
+                "tickers": result.tickers,
+                "thesis": result.thesis,
+            },
+            "bull": {
+                "arguments": result.bull_arguments,
+                "confidence": result.bull_confidence,
+            },
+            "bear": {
+                "arguments": result.bear_arguments,
+                "blind_spots": result.blind_spots,
+                "confidence": result.bear_confidence,
+            },
+            "auditor": {
+                "quality_tier": result.quality_tier,
+                "quality_score": result.quality_score,
+                "verdict": result.verdict,
+                "contradictions": result.contradictions,
+                "recommendations": result.recommendations,
+            },
+        },
     })
