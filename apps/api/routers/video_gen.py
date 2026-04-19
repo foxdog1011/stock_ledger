@@ -1411,6 +1411,8 @@ _SLOT_CONFIG: dict[str, tuple[str, str, str]] = {
     ),
 }
 
+_SHORTS_SLOTS = ("morning", "afternoon", "sat_am", "sat_pm", "sun_am", "sun_pm")
+
 
 @router.post(
     "/video-gen/pick-stock",
@@ -1548,7 +1550,7 @@ def n8n_generate_video(req: N8nGenerateRequest):
     )
 
     symbol = req.symbol.upper().strip()
-    is_shorts = req.slot in ("morning", "afternoon")
+    is_shorts = req.slot in _SHORTS_SLOTS
 
     # Map slot to content_type
     slot_content_type = {
@@ -1556,6 +1558,10 @@ def n8n_generate_video(req: N8nGenerateRequest):
         "afternoon": "single",
         "long_tuesday": "single",
         "long_friday": "macro",
+        "sat_am": "single",
+        "sat_pm": "single",
+        "sun_am": "single",
+        "sun_pm": "single",
     }
     content_type = slot_content_type.get(req.slot, "single")
 
@@ -1655,7 +1661,7 @@ def n8n_upload_youtube(req: N8nUploadRequest):
     if privacy not in ("public", "unlisted", "private"):
         raise HTTPException(400, "privacy must be public, unlisted, or private")
 
-    is_shorts = req.slot in ("morning", "afternoon")
+    is_shorts = req.slot in _SHORTS_SLOTS
 
     # Compute publishAt if publish_time provided
     publish_at: str | None = None
