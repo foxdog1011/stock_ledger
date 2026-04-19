@@ -15,7 +15,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -80,12 +80,26 @@ class ReviewRequest(BaseModel):
 
 @router.get("/knowledge/ingest", summary="Ingest a URL (GET shortcut for iOS)")
 def ingest_url_get(
-    url: str,
+    request: Request,
     x_api_key: str = Header(None, alias="X-API-Key"),
 ) -> JSONResponse:
-    """GET version for iOS Shortcuts — accepts url as query parameter."""
+    """GET version for iOS Shortcuts — accepts url as query parameter.
+
+    Uses raw query string to preserve '&' in target URLs (e.g. Threads URLs
+    with ?xmt=...&slof=... would be split by FastAPI's normal parsing).
+    """
     _check_api_key(x_api_key)
-    req = IngestURLRequest(url=url, source_type="auto", notes="")
+    raw_qs = str(request.url.query)
+    if not raw_qs.startswith("url="):
+        raise HTTPException(400, "Missing 'url' query parameter")
+    # Everything after 'url=' is the target URL (may contain & from the target)
+    target_url = raw_qs[4:]  # strip "url="
+    # URL-decode percent-encoded characters
+    from urllib.parse import unquote
+    target_url = unquote(target_url)
+    if not target_url:
+        raise HTTPException(400, "Empty 'url' parameter")
+    req = IngestURLRequest(url=target_url, source_type="auto", notes="")
     return _do_ingest(req, _get_db())
 
 
