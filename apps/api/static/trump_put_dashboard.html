@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trump Put Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --text: #e1e4ed; --muted: #8b8fa3;
+    --green: #22c55e; --yellow: #eab308; --orange: #f97316; --red: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; padding: 24px; }
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .header .subtitle { color: var(--muted); font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 300px 1fr; gap: 24px; max-width: 1400px; margin: 0 auto; }
+  .left { display: flex; flex-direction: column; gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .gauge-wrap { text-align: center; }
+  .gauge-wrap canvas { max-width: 240px; margin: 0 auto; }
+  .gauge-label { font-size: 40px; font-weight: 800; margin-top: 8px; }
+  .gauge-status { font-size: 18px; font-weight: 600; margin-top: 4px; }
+  .indicator { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .indicator:last-child { border-bottom: none; }
+  .indicator .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .indicator .info { flex: 1; }
+  .indicator .name { font-size: 13px; color: var(--muted); }
+  .indicator .value { font-size: 22px; font-weight: 700; }
+  .indicator .zone { font-size: 12px; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+  .zone-green { background: rgba(34,197,94,.15); color: var(--green); }
+  .zone-yellow { background: rgba(234,179,8,.15); color: var(--yellow); }
+  .zone-orange { background: rgba(249,115,22,.15); color: var(--orange); }
+  .zone-red { background: rgba(239,68,68,.15); color: var(--red); }
+  .chart-card { min-height: 400px; }
+  .chart-card canvas { width: 100% !important; }
+  .thresholds-ref { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.6; }
+  .events { margin-top: 16px; }
+  .events h3 { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+  .event { font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .event:last-child { border-bottom: none; }
+  .event .date { color: var(--muted); }
+  .event .type-reversal { color: var(--green); }
+  .event .type-escalation { color: var(--red); }
+  .event .type-marker { color: var(--yellow); }
+  .refresh-info { text-align: center; color: var(--muted); font-size: 12px; margin-top: 16px; }
+  .narrative { font-size: 14px; line-height: 1.6; color: var(--muted); margin-top: 12px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Trump Put Tracker</h1>
+  <div class="subtitle">S&P 500 / 10Y Treasury / VIX — BofA & Evercore framework</div>
+</div>
+
+<div class="grid">
+  <div class="left">
+    <div class="card gauge-wrap">
+      <canvas id="gaugeChart" width="240" height="160"></canvas>
+      <div class="gauge-label" id="scoreText">--</div>
+      <div class="gauge-status" id="statusText">Loading...</div>
+    </div>
+
+    <div class="card" id="indicators">
+      <div class="indicator" id="ind-sp500">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="name">S&P 500</div>
+          <div class="value">--</div>
+          <span class="zone">--</span>
+        </div>
+      </div>
+      <div class="indicator" id="ind-tnx">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="name">10Y Treasury Yield</div>
+          <div class="value">--</div>
+          <span class="zone">--</span>
+        </div>
+      </div>
+      <div class="indicator" id="ind-vix">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="name">VIX</div>
+          <div class="value">--</div>
+          <span class="zone">--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card events" id="eventsCard">
+      <h3>Historical Events</h3>
+    </div>
+  </div>
+
+  <div class="right" style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card chart-card">
+      <canvas id="sp500Chart"></canvas>
+      <div class="thresholds-ref">
+        Thresholds — 5,783: Election Day close | 5,400: Nibble zone | 5,200: Buy zone | 5,000: Trump Put activated<br>
+        10Y Yield — 4.5%: Danger trigger (April 2025 actual) | VIX — 30: Fear | 45: Extreme
+      </div>
+    </div>
+    <div class="card chart-card" style="min-height:250px;">
+      <canvas id="tnxChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="narrative" id="narrativeText">Loading analysis...</div>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-info" id="refreshInfo">Loading...</div>
+
+<script>
+const API = window.location.origin + '/api/trump-put';
+
+function scoreColor(s) {
+  if (s <= 20) return '#22c55e';
+  if (s <= 40) return '#eab308';
+  if (s <= 60) return '#f97316';
+  return '#ef4444';
+}
+function zoneClass(s) {
+  if (s <= 20) return 'zone-green';
+  if (s <= 40) return 'zone-yellow';
+  if (s <= 60) return 'zone-orange';
+  return 'zone-red';
+}
+
+let gaugeChart, sp500Chart, tnxChart;
+
+function initGauge() {
+  const ctx = document.getElementById('gaugeChart').getContext('2d');
+  gaugeChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      datasets: [{
+        data: [0, 100],
+        backgroundColor: ['#333', '#1a1d27'],
+        borderWidth: 0,
+        circumference: 180,
+        rotation: 270,
+      }]
+    },
+    options: {
+      responsive: false,
+      cutout: '75%',
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    }
+  });
+}
+
+function updateGauge(score, label) {
+  const color = scoreColor(score);
+  gaugeChart.data.datasets[0].data = [score, 100 - score];
+  gaugeChart.data.datasets[0].backgroundColor = [color, '#1a1d27'];
+  gaugeChart.update();
+  document.getElementById('scoreText').textContent = score;
+  document.getElementById('scoreText').style.color = color;
+  const st = document.getElementById('statusText');
+  st.textContent = label;
+  st.style.color = color;
+}
+
+function updateIndicator(id, data) {
+  if (!data) return;
+  const el = document.getElementById('ind-' + id);
+  const dot = el.querySelector('.dot');
+  const val = el.querySelector('.value');
+  const zone = el.querySelector('.zone');
+  const color = scoreColor(data.score);
+  dot.style.background = color;
+  if (id === 'sp500') val.textContent = data.value.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  else if (id === 'tnx') val.textContent = data.value.toFixed(3) + '%';
+  else val.textContent = data.value.toFixed(2);
+  zone.textContent = data.zone + ' (score ' + data.score + ')';
+  zone.className = 'zone ' + zoneClass(data.score);
+}
+
+function updateEvents(events) {
+  const card = document.getElementById('eventsCard');
+  let html = '<h3>Historical Events</h3>';
+  const recent = events.slice(-8).reverse();
+  for (const ev of recent) {
+    const icon = ev.event_type === 'reversal' ? '↩️' : ev.event_type === 'escalation' ? '⚠️' : '•';
+    html += '<div class="event">' +
+      '<span class="date">' + ev.date + '</span> ' +
+      '<span class="type-' + ev.event_type + '">' + icon + '</span> ' +
+      ev.description.substring(0, 80) +
+    '</div>';
+  }
+  card.innerHTML = html;
+}
+
+function initSP500Chart(chartData, events) {
+  const ctx = document.getElementById('sp500Chart').getContext('2d');
+  const sp = chartData.sp500 || [];
+  const labels = sp.map(d => d.date);
+  const values = sp.map(d => d.close);
+
+  const annotations = {};
+  const thresholds = [
+    { y: 5783, label: 'Election Day 5,783', color: '#eab308' },
+    { y: 5400, label: 'Nibble 5,400', color: '#f97316' },
+    { y: 5000, label: 'PUT 5,000', color: '#ef4444' },
+  ];
+  thresholds.forEach((t, i) => {
+    annotations['line' + i] = {
+      type: 'line', yMin: t.y, yMax: t.y,
+      borderColor: t.color + '60', borderWidth: 1, borderDash: [6, 4],
+      label: { content: t.label, display: true, position: 'start', font: { size: 10 }, color: t.color + 'aa', backgroundColor: 'transparent' }
+    };
+  });
+
+  const eventAnnotations = events.filter(e => e.sp500 && e.event_type !== 'marker');
+  eventAnnotations.forEach((ev, i) => {
+    annotations['ev' + i] = {
+      type: 'point', xValue: ev.date, yValue: ev.sp500,
+      radius: 6,
+      backgroundColor: ev.event_type === 'reversal' ? '#22c55e' : '#ef4444',
+      borderColor: '#fff', borderWidth: 1,
+    };
+  });
+
+  sp500Chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'S&P 500',
+        data: values,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,.1)',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: '#8b8fa3', maxTicksLimit: 12, font: { size: 10 } }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#8b8fa3', font: { size: 10 } }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: {
+        legend: { display: false },
+        annotation: { annotations: annotations },
+      }
+    }
+  });
+}
+
+function initTNXChart(chartData) {
+  const ctx = document.getElementById('tnxChart').getContext('2d');
+  const tnx = chartData.tnx || [];
+
+  tnxChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: tnx.map(d => d.date),
+      datasets: [{
+        label: '10Y Treasury Yield (%)',
+        data: tnx.map(d => d.close),
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245,158,11,.1)',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: '#8b8fa3', maxTicksLimit: 12, font: { size: 10 } }, grid: { color: '#2a2d3a' } },
+        y: { ticks: { color: '#8b8fa3', font: { size: 10 } }, grid: { color: '#2a2d3a' } }
+      },
+      plugins: {
+        legend: { display: false },
+        annotation: {
+          annotations: {
+            danger: {
+              type: 'line', yMin: 4.5, yMax: 4.5,
+              borderColor: '#ef444460', borderWidth: 1, borderDash: [6, 4],
+              label: { content: '4.5% Danger', display: true, position: 'start', font: { size: 10 }, color: '#ef4444aa', backgroundColor: 'transparent' }
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+async function loadData() {
+  try {
+    const [reportRes, chartRes, histRes] = await Promise.all([
+      fetch(API + '/report'),
+      fetch(API + '/chart-data?period=6mo'),
+      fetch(API + '/history'),
+    ]);
+    const report = await reportRes.json();
+    const chartData = await chartRes.json();
+    const history = await histRes.json();
+
+    updateGauge(report.composite_score, report.composite_label);
+    updateIndicator('sp500', report.indicators?.sp500);
+    updateIndicator('tnx', report.indicators?.tnx);
+    updateIndicator('vix', report.indicators?.vix);
+    document.getElementById('narrativeText').textContent = report.narrative;
+    updateEvents(history);
+
+    if (sp500Chart) { sp500Chart.destroy(); }
+    if (tnxChart) { tnxChart.destroy(); }
+    initSP500Chart(chartData, history);
+    initTNXChart(chartData);
+
+    const now = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+    document.getElementById('refreshInfo').textContent = 'Last refresh: ' + now + ' (auto-refresh every 5 min)';
+  } catch (e) {
+    document.getElementById('refreshInfo').textContent = 'Error: ' + e.message;
+  }
+}
+
+initGauge();
+loadData();
+setInterval(loadData, 300000);
+</script>
+</body>
+</html>

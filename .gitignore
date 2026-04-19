@@ -53,8 +53,20 @@ htmlcov/
 # n8n workflows (contain webhook secrets)
 scripts/n8n_*.json
 scripts/*_export.json*
+scripts/*_workflow.json
+scripts/*_workflow.json.bak
+scripts/create_n8n_workflow.py
 
 # Local scripts & logs
 scripts/watchdog.py
 scripts/start_watchdog.bat
 logs/
+
+# Temp images (root-level test screenshots)
+/*.png
+
+# Build artifacts
+apps/web/tsconfig.tsbuildinfo
+
+# Backup files
+*.bak
