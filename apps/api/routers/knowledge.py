@@ -78,6 +78,17 @@ class ReviewRequest(BaseModel):
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
 
+@router.get("/knowledge/ingest", summary="Ingest a URL (GET shortcut for iOS)")
+def ingest_url_get(
+    url: str,
+    x_api_key: str = Header(None, alias="X-API-Key"),
+) -> JSONResponse:
+    """GET version for iOS Shortcuts — accepts url as query parameter."""
+    _check_api_key(x_api_key)
+    req = IngestURLRequest(url=url, source_type="auto", notes="")
+    return _do_ingest(req, _get_db())
+
+
 @router.post("/knowledge/ingest", summary="Ingest a URL into the knowledge base")
 def ingest_url(
     req: IngestURLRequest,
@@ -89,8 +100,11 @@ def ingest_url(
     This is the main one-click ingestion endpoint. Supports Threads, Twitter/X,
     and any web page. Returns the analysis result with Bull/Bear cases.
     """
-    db = _get_db()
+    return _do_ingest(req, _get_db())
 
+
+def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
+    """Shared ingestion logic for both GET and POST endpoints."""
     # Check for duplicate
     existing = get_by_url(db, req.url)
     if existing:
