@@ -80,12 +80,21 @@ is_container_running() {
 }
 
 is_n8n_responsive() {
+    # Check if the n8n editor UI is accessible (does not require API key).
+    # The /healthz endpoint returns 200 when n8n is ready.
+    # Fallback: check the editor page returns 200.
     local http_code
     http_code=$(curl -s -o /dev/null -w '%{http_code}' \
         --connect-timeout 5 --max-time 10 \
-        -H "X-N8N-API-KEY: $N8N_API_KEY" \
-        "${N8N_BASE_URL}/api/v1/workflows" 2>/dev/null || echo "000")
-    [[ "$http_code" == "200" ]]
+        "${N8N_BASE_URL}/healthz" 2>/dev/null || echo "000")
+    if [[ "$http_code" == "200" ]]; then
+        return 0
+    fi
+    # Fallback: try the editor page
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        --connect-timeout 5 --max-time 10 \
+        "${N8N_BASE_URL}/" 2>/dev/null || echo "000")
+    [[ "$http_code" == "200" || "$http_code" == "301" || "$http_code" == "302" ]]
 }
 
 restart_container() {
@@ -111,68 +120,56 @@ restart_container() {
 
 check_workflow_active() {
     local wf_id="$1"
-    local response
-    response=$(curl -s --connect-timeout 5 --max-time 10 \
-        -H "X-N8N-API-KEY: $N8N_API_KEY" \
-        "${N8N_BASE_URL}/api/v1/workflows/${wf_id}" 2>/dev/null || echo "{}")
+    # Use docker exec + n8n CLI to check workflow status (API key auth broken in n8n 2.x)
+    local output
+    output=$(docker exec "$CONTAINER" n8n list:workflow 2>/dev/null || echo "")
 
-    local active
-    active=$(echo "$response" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    print(data.get('active', False))
-except:
-    print('False')
-" 2>/dev/null || echo "False")
+    if [[ -z "$output" ]]; then
+        log "WARN" "Could not list workflows via CLI"
+        return 1
+    fi
 
-    [[ "$active" == "True" ]]
+    # n8n list:workflow outputs "ID|Name" for active workflows
+    echo "$output" | grep -q "^${wf_id}|"
 }
 
 activate_workflow() {
     local wf_id="$1"
-    curl -s -X PATCH \
-        -H "X-N8N-API-KEY: $N8N_API_KEY" \
-        -H "Content-Type: application/json" \
-        -d '{"active": true}' \
-        "${N8N_BASE_URL}/api/v1/workflows/${wf_id}" \
-        --connect-timeout 5 --max-time 10 \
-        -o /dev/null 2>/dev/null
+    # Use n8n CLI to set workflow active, then restart container for it to take effect
+    docker exec "$CONTAINER" n8n update:workflow --id="$wf_id" --active=true 2>/dev/null || {
+        log "WARN" "Failed to activate WF $wf_id via CLI"
+        return 1
+    }
+    log "INFO" "WF $wf_id set to active via CLI (restart needed to take effect)"
 }
 
 check_recent_execution() {
     # Check if WF has had a successful execution in the last N hours.
-    # Uses n8n API to query executions.
+    # Uses n8n event log files inside the container (API key auth broken in n8n 2.x).
     local wf_id="$1"
     local hours="$2"
 
-    local response
-    response=$(curl -s --connect-timeout 5 --max-time 10 \
-        -H "X-N8N-API-KEY: $N8N_API_KEY" \
-        "${N8N_BASE_URL}/api/v1/executions?workflowId=${wf_id}&status=success&limit=1" 2>/dev/null || echo "{}")
-
     local has_recent
-    has_recent=$(python3 -c "
+    has_recent=$(docker exec "$CONTAINER" sh -c "cat /home/node/.n8n/n8nEventLog.log 2>/dev/null" \
+        | grep "workflow.success" \
+        | grep "\"workflowId\":\"${wf_id}\"" \
+        | tail -1 \
+        | python -c "
 import sys, json
 from datetime import datetime, timedelta, timezone
 
 try:
-    data = json.loads('''$response''')
-    executions = data.get('data', [])
-    if not executions:
+    line = sys.stdin.readline().strip()
+    if not line:
         print('no_executions')
         sys.exit(0)
-
-    last = executions[0]
-    finished = last.get('stoppedAt') or last.get('startedAt', '')
-    if not finished:
+    data = json.loads(line)
+    ts = data.get('ts', '')
+    if not ts:
         print('no_timestamp')
         sys.exit(0)
-
-    # Parse ISO timestamp
-    finished_dt = datetime.fromisoformat(finished.replace('Z', '+00:00'))
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=$hours)
-
+    finished_dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=${hours})
     if finished_dt >= cutoff:
         print('recent')
     else:
@@ -191,6 +188,27 @@ is_business_hours() {
     hour=$(TZ='Asia/Taipei' date '+%H' 2>/dev/null || date '+%H')
     hour=$((10#$hour))  # Remove leading zero
     (( hour >= BIZ_HOUR_START && hour < BIZ_HOUR_END ))
+}
+
+container_uptime_hours() {
+    # Returns how many hours the container has been running.
+    # Returns 999 if unable to determine (assume long uptime).
+    local started_at
+    started_at=$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER" 2>/dev/null || echo "")
+    if [[ -z "$started_at" ]]; then
+        echo "999"
+        return
+    fi
+    python -c "
+from datetime import datetime, timezone
+try:
+    started = datetime.fromisoformat('${started_at}'.replace('Z', '+00:00'))
+    now = datetime.now(timezone.utc)
+    hours = (now - started).total_seconds() / 3600
+    print(int(hours))
+except:
+    print(999)
+" 2>/dev/null || echo "999"
 }
 
 # ── Main check cycle ────────────────────────────────────────────────────────
@@ -260,7 +278,12 @@ run_check() {
 
     # 4. Check if primary workflow has recent executions (business hours only)
     if is_business_hours; then
-        if ! check_recent_execution "$PRIMARY_WF" "$STALE_THRESHOLD_HOURS"; then
+        # Skip stale-execution check if container was recently started/restarted
+        local uptime
+        uptime=$(container_uptime_hours)
+        if (( uptime < STALE_THRESHOLD_HOURS )); then
+            log "INFO" "Container uptime ${uptime}h < ${STALE_THRESHOLD_HOURS}h threshold — skipping stale execution check"
+        elif ! check_recent_execution "$PRIMARY_WF" "$STALE_THRESHOLD_HOURS"; then
             log "WARN" "WF $PRIMARY_WF has no successful execution in last ${STALE_THRESHOLD_HOURS}h"
 
             # Check if the workflow is at least active
