@@ -26,6 +26,8 @@ _FRED_SERIES = {
     "sp500": "SP500",
     "tnx":   "DGS10",
     "vix":   "VIXCLS",
+    "credit_spread": "BAMLH0A0HYM2",
+    "twexb": "TWEXB",
 }
 
 
@@ -205,6 +207,38 @@ def _fetch_fred(indicator: str) -> tuple[float, str] | None:
         return None
 
 
+def _fetch_fred_series(series_id: str) -> tuple[float, str] | None:
+    """Fetch any FRED series by ID. Returns (value, date) or None."""
+    api_key = os.environ.get("FRED_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        url = (
+            f"https://api.stlouisfed.org/fred/series/observations"
+            f"?series_id={series_id}&api_key={api_key}&file_type=json"
+            f"&limit=5&sort_order=desc"
+        )
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = _json.loads(resp.read())
+        for obs in data.get("observations", []):
+            if obs["value"] != ".":
+                return (float(obs["value"]), obs["date"])
+        return None
+    except Exception:
+        logger.exception("FRED fetch failed for %s", series_id)
+        return None
+
+
+def fetch_credit_spread() -> tuple[float, str] | None:
+    """Fetch ICE BofA High Yield Option-Adjusted Spread (BAMLH0A0HYM2)."""
+    return _fetch_fred_series("BAMLH0A0HYM2")
+
+
+def fetch_trade_weighted_usd() -> tuple[float, str] | None:
+    """Fetch Trade Weighted USD Broad Index (TWEXB) as DXY alternative."""
+    return _fetch_fred_series("TWEXB")
+
+
 _default_fetcher = MarketDataFetcher()
 
 
@@ -214,6 +248,18 @@ def fetch(indicator: str) -> tuple[float, str] | None:
 
 def fetch_all() -> dict[str, tuple[float, str]]:
     return _default_fetcher.fetch_all()
+
+
+def fetch_credit_and_usd() -> dict[str, tuple[float, str]]:
+    """Fetch credit spread and trade-weighted USD. Returns available results."""
+    results: dict[str, tuple[float, str]] = {}
+    credit = fetch_credit_spread()
+    if credit is not None:
+        results["credit_spread"] = credit
+    twexb = fetch_trade_weighted_usd()
+    if twexb is not None:
+        results["twexb"] = twexb
+    return results
 
 
 def fetch_history(indicator: str, period: str = "6mo") -> list[dict]:

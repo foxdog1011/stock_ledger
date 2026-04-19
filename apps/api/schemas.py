@@ -1,8 +1,9 @@
 """Pydantic request / response schemas."""
 from __future__ import annotations
 
+import re
 from typing import Annotated, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Cash ─────────────────────────────────────────────────────────────────────
@@ -11,6 +12,13 @@ class AddCashIn(BaseModel):
     amount: float = Field(..., description="Positive = deposit, negative = withdrawal")
     date: str = Field(..., description="YYYY-MM-DD")
     note: str = Field("", description="Optional description")
+
+    @field_validator("date")
+    @classmethod
+    def _validate_date(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            raise ValueError("date must be in YYYY-MM-DD format")
+        return v
 
 
 class CashBalanceOut(BaseModel):
@@ -40,6 +48,13 @@ class AddTradeIn(BaseModel):
     commission: Annotated[float, Field(ge=0)] = 0.0
     tax: Annotated[float, Field(ge=0)] = 0.0
     note: str = ""
+
+    @field_validator("date")
+    @classmethod
+    def _validate_date(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            raise ValueError("date must be in YYYY-MM-DD format")
+        return v
 
 
 # ── Positions ─────────────────────────────────────────────────────────────────

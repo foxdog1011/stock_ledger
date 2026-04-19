@@ -1239,6 +1239,10 @@ class SlotType(str, Enum):
     long_tuesday = "long_tuesday"
     long_friday = "long_friday"
     weekly_review = "weekly_review"
+    sat_am = "sat_am"
+    sat_pm = "sat_pm"
+    sun_am = "sun_am"
+    sun_pm = "sun_pm"
 
 
 class PickStockRequest(BaseModel):
@@ -1385,6 +1389,26 @@ _SLOT_CONFIG: dict[str, tuple[str, str, str]] = {
         "abs_volume",
         "法人成交量最大 ({value:,.0f})",
     ),
+    "sat_am": (
+        "foreign_net",
+        "shorts",
+        "外資淨買賣最大 ({value:,.0f})",
+    ),
+    "sat_pm": (
+        "abs_volume",
+        "shorts",
+        "法人成交量最大 ({value:,.0f})",
+    ),
+    "sun_am": (
+        "momentum",
+        "shorts",
+        "三大法人淨買超動能最強 ({value:,.0f})",
+    ),
+    "sun_pm": (
+        "abs_volume",
+        "shorts",
+        "法人成交量最大 ({value:,.0f})",
+    ),
 }
 
 
@@ -1412,8 +1436,8 @@ def pick_stock(req: PickStockRequest):
 
     slot = req.slot.value
 
-    # ── weekly_review: return top 3-5 symbols ────────────────────────────────
-    if slot == "weekly_review":
+    # ── weekly_review / long_friday: return top 3-5 symbols ────────────────
+    if slot in ("weekly_review", "long_friday"):
         candidates = [s for s in scored if s["symbol"] not in exclude]
         candidates.sort(key=lambda x: x.get("abs_volume", 0), reverse=True)
         top = candidates[:5]

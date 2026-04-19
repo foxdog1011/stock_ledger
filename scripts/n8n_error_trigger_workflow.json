@@ -1,0 +1,83 @@
+{
+  "id": "1005",
+  "name": "JARVIS Global Error Handler",
+  "active": true,
+  "nodes": [
+    {
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "format-error",
+      "name": "Format Error Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300],
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({ workflowName: $json.workflow.name || 'Unknown Workflow', workflowId: $json.workflow.id || 'N/A', executionId: $json.execution.id || 'N/A', nodeName: $json.execution.lastNodeExecuted || 'Unknown Node', errorMessage: $json.execution.error.message || 'No error message available', timestamp: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }), executionUrl: $json.execution.url || '' }) }}"
+      }
+    },
+    {
+      "id": "send-discord-alert",
+      "name": "Discord Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [{ title: '\\u26a0\\ufe0f n8n \\u5de5\\u4f5c\\u6d41\\u7570\\u5e38', color: 16711680, fields: [{ name: '\\u5de5\\u4f5c\\u6d41', value: $json.workflowName + ' (ID: ' + $json.workflowId + ')', inline: false }, { name: '\\u5931\\u6557\\u7bc0\\u9ede', value: $json.nodeName, inline: true }, { name: '\\u57f7\\u884c ID', value: $json.executionId, inline: true }, { name: '\\u932f\\u8aa4\\u8a0a\\u606f', value: '```\\n' + $json.errorMessage.substring(0, 1000) + '\\n```', inline: false }, { name: '\\u6642\\u9593', value: $json.timestamp, inline: true }], footer: { text: 'JARVIS Error Handler' } }] }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Message": {
+      "main": [
+        [
+          {
+            "node": "Discord Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    {
+      "name": "error-handling"
+    },
+    {
+      "name": "monitoring"
+    }
+  ]
+}

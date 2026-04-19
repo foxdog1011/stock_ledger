@@ -37,6 +37,9 @@ class TrumpPutReport:
     nearby_events: list[HistoricalEvent]
     thresholds: dict[str, list[dict]]
     backtest: dict | None = None
+    rolling_z_composite: tuple[int, str] | None = None
+    credit_spread: IndicatorReading | None = None
+    twexb: IndicatorReading | None = None
 
 
 @dataclass(frozen=True)

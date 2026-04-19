@@ -47,6 +47,10 @@ async def restore_db(
 
     content = await file.read()
 
+    max_size = 500 * 1024 * 1024  # 500 MB
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 500 MB.")
+
     if not content.startswith(_SQLITE_MAGIC):
         raise HTTPException(status_code=400, detail="Not a valid SQLite database file")
 

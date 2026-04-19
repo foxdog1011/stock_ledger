@@ -129,7 +129,7 @@ def to_json(report: TrumpPutReport) -> dict:
             "score": r.score,
         }
 
-    return {
+    result = {
         "timestamp": report.timestamp.isoformat(),
         "composite_score": report.composite_score,
         "composite_label": report.composite_label,
@@ -140,6 +140,8 @@ def to_json(report: TrumpPutReport) -> dict:
             "vix": _reading(report.vix),
             "dxy": _reading(report.dxy),
             "approval": _reading(report.approval),
+            "credit_spread": _reading(report.credit_spread),
+            "twexb": _reading(report.twexb),
         },
         "nearby_events": [
             {
@@ -154,3 +156,12 @@ def to_json(report: TrumpPutReport) -> dict:
         "thresholds": report.thresholds,
         "backtest": report.backtest,
     }
+
+    if report.rolling_z_composite is not None:
+        z_score, z_label = report.rolling_z_composite
+        result["rolling_z_composite"] = {
+            "score": z_score,
+            "label": z_label,
+        }
+
+    return result

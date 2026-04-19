@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import logging
+import math
+
 from .models import TrumpPutReport
+
+logger = logging.getLogger(__name__)
 
 WEIGHTS = {
     "sp500": 0.30,
@@ -18,6 +23,15 @@ LABELS = [
     (81, 100, "Activated"),
 ]
 
+_ROLLING_WINDOW = 252  # trading days in one year
+
+
+def _label_for_score(score: int) -> str:
+    for lo, hi, lbl in LABELS:
+        if lo <= score <= hi:
+            return lbl
+    return "Unknown"
+
 
 def compute_composite(**scores: int | None) -> tuple[int, str]:
     parts = {k: v for k, v in scores.items() if v is not None and k in WEIGHTS}
@@ -28,13 +42,92 @@ def compute_composite(**scores: int | None) -> tuple[int, str]:
     raw = sum(parts[k] * WEIGHTS[k] for k in parts) / total_weight
     score = min(100, max(0, round(raw)))
 
-    label = "Unknown"
-    for lo, hi, lbl in LABELS:
-        if lo <= score <= hi:
-            label = lbl
-            break
+    return (score, _label_for_score(score))
 
-    return (score, label)
+
+def rolling_z_score(
+    values: list[float],
+    window: int = _ROLLING_WINDOW,
+) -> float | None:
+    """Compute the Z-score of the last value relative to a rolling window.
+
+    Returns None if fewer than 2 data points are available in the window.
+    """
+    if len(values) < 2:
+        return None
+
+    # Use last `window` values (or all if fewer available)
+    series = values[-window:]
+    n = len(series)
+    current = series[-1]
+
+    mean = sum(series) / n
+    variance = sum((x - mean) ** 2 for x in series) / n
+    std = math.sqrt(variance)
+
+    if std < 1e-10:
+        return 0.0
+
+    return (current - mean) / std
+
+
+def compute_rolling_z_composite(
+    indicator_histories: dict[str, list[float]],
+) -> tuple[int, str] | None:
+    """Compute a composite score using rolling Z-scores across indicators.
+
+    Each indicator's Z-score is mapped to a 0-100 scale and weighted.
+    Returns (score, label) or None if insufficient data.
+
+    Z-score mapping (absolute value, higher = more stress):
+      0.0-0.5 -> 0-15   (normal)
+      0.5-1.0 -> 15-35  (mild)
+      1.0-1.5 -> 35-55  (elevated)
+      1.5-2.0 -> 55-75  (high)
+      2.0-3.0 -> 75-90  (extreme)
+      3.0+    -> 90-100  (crisis)
+    """
+    z_scores: dict[str, float] = {}
+
+    for indicator, history in indicator_histories.items():
+        if indicator not in WEIGHTS:
+            continue
+        z = rolling_z_score(history)
+        if z is not None:
+            z_scores[indicator] = z
+
+    if not z_scores:
+        return None
+
+    def _z_to_score(z: float, indicator: str) -> int:
+        """Map Z-score to 0-100. For S&P, negative Z = stress. For others, positive Z = stress."""
+        # S&P falling is bad (negative Z = stress), others rising is bad (positive Z = stress)
+        stress_z = -z if indicator == "sp500" else z
+        # Approval falling is bad (negative Z = stress)
+        if indicator == "approval":
+            stress_z = -z
+
+        abs_z = max(0.0, stress_z)  # only care about stress direction
+
+        if abs_z < 0.5:
+            return round(abs_z / 0.5 * 15)
+        if abs_z < 1.0:
+            return round(15 + (abs_z - 0.5) / 0.5 * 20)
+        if abs_z < 1.5:
+            return round(35 + (abs_z - 1.0) / 0.5 * 20)
+        if abs_z < 2.0:
+            return round(55 + (abs_z - 1.5) / 0.5 * 20)
+        if abs_z < 3.0:
+            return round(75 + (abs_z - 2.0) / 1.0 * 15)
+        return min(100, round(90 + (abs_z - 3.0) / 1.0 * 10))
+
+    total_weight = sum(WEIGHTS[k] for k in z_scores)
+    weighted_sum = sum(
+        _z_to_score(z, k) * WEIGHTS[k] for k, z in z_scores.items()
+    )
+    score = min(100, max(0, round(weighted_sum / total_weight)))
+
+    return (score, _label_for_score(score))
 
 
 def generate_narrative(report: TrumpPutReport) -> str:

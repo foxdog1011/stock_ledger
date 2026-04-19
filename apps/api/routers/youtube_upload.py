@@ -186,6 +186,58 @@ def _add_to_playlist(youtube, video_id: str, playlist_id: str) -> None:
     youtube.playlistItems().insert(part="snippet", body=body).execute()
 
 
+@router.get("/health/youtube", summary="Check YouTube credential health")
+def youtube_health() -> JSONResponse:
+    """Verify YouTube OAuth credentials are configured and valid."""
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+    refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+
+    missing = [
+        name
+        for name, val in [
+            ("YOUTUBE_CLIENT_ID", client_id),
+            ("YOUTUBE_CLIENT_SECRET", client_secret),
+            ("YOUTUBE_REFRESH_TOKEN", refresh_token),
+        ]
+        if not val
+    ]
+    if missing:
+        return JSONResponse(
+            {"status": "error", "detail": f"Missing env vars: {', '.join(missing)}"},
+            status_code=200,
+        )
+
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=_SCOPES,
+        )
+        creds.refresh(Request())
+
+        youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+        resp = youtube.channels().list(part="snippet", mine=True).execute()
+        items = resp.get("items", [])
+        channel_title = items[0]["snippet"]["title"] if items else "unknown"
+
+        return JSONResponse({"status": "ok", "channel": channel_title})
+
+    except Exception as exc:
+        logger.warning("YouTube health check failed: %s", exc)
+        return JSONResponse(
+            {"status": "error", "detail": str(exc)},
+            status_code=200,
+        )
+
+
 @router.post("/video/youtube-upload", summary="Upload video to YouTube")
 async def youtube_upload(
     file: UploadFile = File(..., description="MP4 video file"),
@@ -247,3 +299,47 @@ async def youtube_upload(
         "title": title,
         "privacy": privacy,
     })
+
+
+@router.get("/health/youtube", summary="Check YouTube credentials")
+def health_youtube() -> JSONResponse:
+    """Non-throwing health check for YouTube OAuth credentials.
+
+    Returns {"status": "ok", "channel": "..."} or {"status": "error", "detail": "..."}.
+    """
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+    refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+
+    missing = [
+        name for name, val in [
+            ("YOUTUBE_CLIENT_ID", client_id),
+            ("YOUTUBE_CLIENT_SECRET", client_secret),
+            ("YOUTUBE_REFRESH_TOKEN", refresh_token),
+        ] if not val
+    ]
+    if missing:
+        return JSONResponse({"status": "error", "detail": f"Missing env vars: {', '.join(missing)}"})
+
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=_SCOPES,
+        )
+        creds.refresh(Request())
+        yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+        resp = yt.channels().list(part="snippet", mine=True).execute()
+        items = resp.get("items", [])
+        channel_name = items[0]["snippet"]["title"] if items else "unknown"
+        return JSONResponse({"status": "ok", "channel": channel_name})
+    except Exception as exc:
+        logger.warning("YouTube health check failed: %s", exc)
+        return JSONResponse({"status": "error", "detail": str(exc)})

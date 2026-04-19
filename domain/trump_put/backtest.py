@@ -37,7 +37,7 @@ def compute_backtest(current_score: int = 0) -> BacktestResult:
     hit_rates: dict[str, dict] = {}
     for threshold in [40, 60, 80]:
         relevant = [p for p in pairs if p.days <= 30]
-        total = len(pairs)
+        total = len(relevant)
         hits = len(relevant)
         hit_rates[str(threshold)] = {
             "threshold": threshold,
