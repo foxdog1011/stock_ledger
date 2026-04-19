@@ -21,6 +21,8 @@ services:
       YOUTUBE_CLIENT_ID: "${YOUTUBE_CLIENT_ID:-}"
       YOUTUBE_CLIENT_SECRET: "${YOUTUBE_CLIENT_SECRET:-}"
       YOUTUBE_REFRESH_TOKEN: "${YOUTUBE_REFRESH_TOKEN:-}"
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     volumes:
       - ledger_data:/data
     restart: unless-stopped

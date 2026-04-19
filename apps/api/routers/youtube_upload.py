@@ -110,8 +110,9 @@ def _upload_video(
             "title": title,
             "description": description,
             "tags": tags,
-            "categoryId": "25",   # 25 = News & Politics (closest to finance)
+            "categoryId": "22",   # 22 = People & Blogs (standard for TW finance)
             "defaultLanguage": "zh-TW",
+            "defaultAudioLanguage": "zh-TW",
         },
         "status": status,
     }
