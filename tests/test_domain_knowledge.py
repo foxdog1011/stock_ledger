@@ -21,7 +21,12 @@ from domain.knowledge.repository import (
     count_entries,
 )
 from domain.knowledge.fetcher import _detect_source, _TextExtractor
-from domain.knowledge.analyzer import _extract_tickers_regex
+from domain.knowledge.analyzer import (
+    _extract_tickers_regex,
+    _extract_us_tickers,
+    _extract_tags,
+    analyze_content,
+)
 from domain.knowledge.obsidian import _sanitize_filename
 
 
@@ -207,11 +212,66 @@ class TestAnalyzer:
         assert tickers.count("2330") == 1
 
     def test_extract_tickers_filters_invalid(self) -> None:
-        text = "year 2026 or number 0001 or 999"
+        text = "year 2026 or number 0001 or 999 or ticker 2330"
         tickers = _extract_tickers_regex(text)
-        assert "2026" in tickers  # valid range
+        assert "2026" not in tickers  # filtered as year
         assert "0001" not in tickers  # too low
+        assert "2330" in tickers  # valid ticker
         # 999 has only 3 digits, won't match \b\d{4}\b
+
+    def test_extract_us_tickers(self) -> None:
+        text = "AMD and NVDA are up today, INTC lagging"
+        tickers = _extract_us_tickers(text)
+        assert "AMD" in tickers
+        assert "NVDA" in tickers
+        assert "INTC" in tickers
+
+    def test_extract_tags(self) -> None:
+        text = "台積電的半導體技術在AI領域領先"
+        tags = _extract_tags(text)
+        assert "半導體" in tags
+        assert "AI" in tags
+
+    def test_analyze_content_no_api(self) -> None:
+        """analyze_content should work without any API key."""
+        result = analyze_content(
+            title="Test",
+            text="台積電(2330)在AI晶片市場表現亮眼，AMD也持續成長",
+            source_type="threads",
+        )
+        assert "2330" in result.tickers
+        assert "AMD" in result.tickers
+        assert "半導體" in result.tags
+        assert result.quality_tier == "unreviewed"
+        assert result.bull_case == ""  # no AI analysis
+
+
+# ── URL normalization tests ────────────────────────────────────────────────
+
+
+class TestURLNormalization:
+
+    def test_strips_tracking_params(self) -> None:
+        from apps.api.routers.knowledge import _normalize_url
+        url = "https://www.threads.com/@user/post/abc?xmt=tracking123&slof=1"
+        normalized = _normalize_url(url)
+        assert "xmt=" not in normalized
+        assert "slof=" not in normalized
+        assert "@user/post/abc" in normalized
+
+    def test_preserves_meaningful_params(self) -> None:
+        from apps.api.routers.knowledge import _normalize_url
+        url = "https://example.com/article?page=2&sort=date"
+        normalized = _normalize_url(url)
+        assert "page=2" in normalized
+        assert "sort=date" in normalized
+
+    def test_strips_utm_params(self) -> None:
+        from apps.api.routers.knowledge import _normalize_url
+        url = "https://example.com/article?utm_source=twitter&utm_medium=social"
+        normalized = _normalize_url(url)
+        assert "utm_source" not in normalized
+        assert "utm_medium" not in normalized
 
 
 # ── Obsidian tests ──────────────────────────────────────────────────────────
@@ -236,11 +296,11 @@ class TestObsidian:
                 content="Full article content here",
                 tickers=["2330", "2454"],
                 tags=["半導體", "AI"],
-                bull_case="Strong demand",
-                bear_case="Valuation risk",
-                audit_notes="No issues",
-                quality_tier="high",
-                quality_score=0.9,
+                bull_case="",
+                bear_case="",
+                audit_notes="",
+                quality_tier="unreviewed",
+                quality_score=0.0,
             )
 
         assert path.startswith("knowledge/")
@@ -249,8 +309,10 @@ class TestObsidian:
         content = full_path.read_text(encoding="utf-8")
         assert "Test Article" in content
         assert "2330" in content
-        assert "Strong demand" in content
-        assert "Valuation risk" in content
+        assert "[[2330-台積電]]" in content  # wikilink
+        assert "[[2454-聯發科]]" in content  # wikilink
+        assert "#半導體" in content  # Obsidian tag
+        assert "reviewed: false" in content  # Dataview field
 
 
 # ── Debate module tests ─────────────────────────────────────────────────────

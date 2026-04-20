@@ -1,19 +1,52 @@
-"""AI-powered content analysis: summarize, extract tickers, Bull/Bear debate."""
+"""Content analysis: regex-based extraction (no AI API calls).
+
+The ingestion pipeline uses free local extraction only:
+- Ticker extraction via regex
+- Tag detection via keyword matching
+- Title cleaning
+- Text truncation for summary
+
+AI-powered deep analysis (Bull/Bear, quality scoring) is done on-demand
+via Claude Code conversations reading the Obsidian vault — zero API cost.
+"""
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
-import urllib.request
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Known Taiwan stock keywords → tags mapping
+_TAG_KEYWORDS: dict[str, list[str]] = {
+    "半導體": ["半導體", "晶圓", "台積", "TSMC", "聯發科", "IC設計", "封測", "矽"],
+    "AI": ["AI", "人工智慧", "機器學習", "LLM", "GPT", "Claude", "深度學習"],
+    "電動車": ["電動車", "EV", "特斯拉", "Tesla", "充電"],
+    "金融": ["金融", "銀行", "壽險", "證券", "保險"],
+    "航運": ["航運", "貨櫃", "散裝", "長榮", "萬海", "陽明"],
+    "綠能": ["綠能", "太陽能", "風電", "儲能"],
+    "生技": ["生技", "新藥", "醫材", "FDA"],
+    "營建": ["營建", "房地產", "建設", "都更"],
+    "觀光": ["觀光", "旅遊", "飯店", "餐飲"],
+    "SaaS": ["SaaS", "軟體", "雲端", "訂閱制"],
+    "CPU": ["CPU", "處理器", "x86", "ARM"],
+    "MEMS": ["MEMS", "微機電", "振盪器", "石英"],
+    "外資": ["外資", "法人", "投信", "自營商", "三大法人"],
+    "總經": ["總經", "利率", "CPI", "Fed", "聯準會", "GDP", "通膨"],
+    "美股": ["美股", "S&P", "那斯達克", "NASDAQ", "道瓊"],
+}
+
+# US stock tickers commonly mentioned in Taiwan investment context
+# Use lookaround to handle Chinese-ASCII boundaries where \b may not match
+_US_TICKER_PATTERNS = re.compile(
+    r'(?<![A-Za-z])(AAPL|MSFT|GOOGL|GOOG|AMZN|NVDA|META|TSLA|AMD|INTC|ARM|TSM|AVGO'
+    r'|QCOM|MU|ASML|LRCX|KLAC|AMAT|MRVL|SMCI|DELL|HPE)(?![A-Za-z])'
+)
+
 
 @dataclass(frozen=True)
 class AnalysisResult:
-    """Output from AI content analysis."""
+    """Output from content analysis."""
     title: str
     summary: str
     tickers: list[str]
@@ -25,40 +58,42 @@ class AnalysisResult:
     quality_score: float
 
 
-def _call_openai(messages: list[dict], max_tokens: int = 1000) -> str:
-    """Call OpenAI API via raw HTTP (no SDK dependency)."""
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set")
-
-    payload = json.dumps({
-        "model": "gpt-4o-mini",
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-        "response_format": {"type": "json_object"},
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-    return data["choices"][0]["message"]["content"]
-
-
 def _extract_tickers_regex(text: str) -> list[str]:
     """Extract Taiwan stock tickers (4-digit numbers) from text."""
     # Match patterns like 2330, (2330), 2330.TW
     matches = re.findall(r'\b(\d{4})\b', text)
-    # Filter to valid TWSE range (1000-9999)
-    valid = [m for m in matches if 1000 <= int(m) <= 9999]
+    # Filter to valid TWSE range (1000-9999), exclude common years
+    current_year = 2026
+    valid = [
+        m for m in matches
+        if 1000 <= int(m) <= 9999 and not (2020 <= int(m) <= current_year + 1)
+    ]
     return list(dict.fromkeys(valid))  # dedupe preserving order
+
+
+def _extract_us_tickers(text: str) -> list[str]:
+    """Extract commonly mentioned US stock tickers."""
+    matches = _US_TICKER_PATTERNS.findall(text)
+    return list(dict.fromkeys(matches))
+
+
+def _extract_tags(text: str) -> list[str]:
+    """Extract topic tags by keyword matching."""
+    tags: list[str] = []
+    upper = text.upper()
+    for tag, keywords in _TAG_KEYWORDS.items():
+        if any(kw.upper() in upper for kw in keywords):
+            tags.append(tag)
+    return tags
+
+
+def _make_summary(text: str, max_len: int = 200) -> str:
+    """Create a simple summary from the first meaningful paragraph."""
+    lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 15]
+    summary = " ".join(lines[:3])
+    if len(summary) > max_len:
+        summary = summary[:max_len] + "…"
+    return summary
 
 
 def analyze_content(
@@ -67,83 +102,27 @@ def analyze_content(
     source_type: str,
     user_notes: str = "",
 ) -> AnalysisResult:
-    """Run AI analysis pipeline on fetched content.
+    """Analyze content using free local extraction (no API calls).
 
-    Steps:
-    1. Summarize + extract tickers/tags
-    2. Bull case analysis
-    3. Bear case + blind spot detection
-    4. Quality scoring
+    Extracts tickers, tags, and creates a basic summary.
+    Deep analysis (Bull/Bear) is deferred to Claude Code sessions.
     """
-    # Truncate for API limits
-    truncated = text[:3000]
+    tw_tickers = _extract_tickers_regex(text)
+    us_tickers = _extract_us_tickers(text)
+    all_tickers = tw_tickers + us_tickers
+    tags = _extract_tags(text)
+    summary = _make_summary(text)
 
-    system_prompt = """你是專業台股投資知識分析師。分析以下文章內容，回傳 JSON 格式：
-
-{
-    "title": "簡潔的中文標題（20字以內）",
-    "summary": "3-5句話的重點摘要",
-    "tickers": ["2330", "2454"],  // 文中提到的台股代碼
-    "tags": ["半導體", "外資"],   // 相關主題標籤
-    "bull_case": "這篇分析的價值和支持論點（2-3句）",
-    "bear_case": "盲點、風險、可能遺漏的問題（2-3句）",
-    "audit_notes": "與常識或市場現況的矛盾點（1-2句，沒有就寫「無明顯矛盾」）",
-    "quality_tier": "high/medium/low",
-    "quality_score": 0.0-1.0
-}
-
-品質評分標準：
-- high (0.8-1.0): 有數據支撐、邏輯清晰、分析深入
-- medium (0.5-0.7): 有觀點但缺乏數據、或分析較淺
-- low (0.0-0.4): 純猜測、情緒化、或資訊明顯錯誤
-
-嚴禁給出買賣建議。僅分析知識品質。"""
-
-    user_prompt = f"來源：{source_type}\n標題：{title}\n\n內容：\n{truncated}"
-    if user_notes:
-        user_prompt += f"\n\n使用者備註：{user_notes}"
-
-    try:
-        raw = _call_openai([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ])
-        result = json.loads(raw)
-    except Exception as exc:
-        logger.warning("AI analysis failed: %s — using fallback", exc)
-        # Fallback: regex-based extraction
-        tickers = _extract_tickers_regex(text)
-        return AnalysisResult(
-            title=title[:50] or "未命名文章",
-            summary=truncated[:200],
-            tickers=tickers,
-            tags=[],
-            bull_case="",
-            bear_case="",
-            audit_notes="AI 分析失敗，僅做基本擷取",
-            quality_tier="unreviewed",
-            quality_score=0.0,
-        )
-
-    # Merge regex-extracted tickers with AI-extracted ones
-    ai_tickers = result.get("tickers", [])
-    regex_tickers = _extract_tickers_regex(text)
-    all_tickers = list(dict.fromkeys(ai_tickers + regex_tickers))
-
-    quality_score = float(result.get("quality_score", 0.5))
-    quality_tier = result.get("quality_tier", "medium")
-    # Validate tier
-    if quality_tier not in ("high", "medium", "low"):
-        quality_tier = "medium"
+    clean_title = title.strip()[:80] if title.strip() else "未命名文章"
 
     return AnalysisResult(
-        title=result.get("title", title[:50]) or "未命名文章",
-        summary=result.get("summary", ""),
+        title=clean_title,
+        summary=summary,
         tickers=all_tickers,
-        tags=result.get("tags", []),
-        bull_case=result.get("bull_case", ""),
-        bear_case=result.get("bear_case", ""),
-        audit_notes=result.get("audit_notes", ""),
-        quality_tier=quality_tier,
-        quality_score=quality_score,
+        tags=tags,
+        bull_case="",
+        bear_case="",
+        audit_notes="",
+        quality_tier="unreviewed",
+        quality_score=0.0,
     )

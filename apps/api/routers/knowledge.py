@@ -19,6 +19,8 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+
 from domain.knowledge.fetcher import fetch_content
 from domain.knowledge.analyzer import analyze_content
 from domain.knowledge.obsidian import write_to_vault
@@ -30,6 +32,10 @@ from domain.knowledge.repository import (
     update_review,
     count_entries,
 )
+
+# Tracking params to strip for dedup (Threads, Twitter, UTM, etc.)
+_TRACKING_PARAMS = {"xmt", "slof", "utm_source", "utm_medium", "utm_campaign",
+                    "utm_content", "utm_term", "igshid", "s", "t", "ref"}
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -117,10 +123,22 @@ def ingest_url(
     return _do_ingest(req, _get_db())
 
 
+def _normalize_url(url: str) -> str:
+    """Strip tracking parameters from URL for dedup comparison."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    cleaned = {k: v for k, v in params.items() if k not in _TRACKING_PARAMS}
+    clean_qs = urlencode(cleaned, doseq=True) if cleaned else ""
+    return urlunparse(parsed._replace(query=clean_qs))
+
+
 def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
     """Shared ingestion logic for both GET and POST endpoints."""
-    # Check for duplicate
-    existing = get_by_url(db, req.url)
+    # Normalize URL (strip tracking params) for dedup
+    normalized = _normalize_url(req.url)
+
+    # Check for duplicate using normalized URL
+    existing = get_by_url(db, normalized)
     if existing:
         return JSONResponse({
             "status": "duplicate",
@@ -137,7 +155,7 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
     if not fetched.text or len(fetched.text.strip()) < 20:
         raise HTTPException(400, "無法擷取足夠的內容。請確認 URL 是否正確。")
 
-    # Step 2: AI analysis (summarize + Bull/Bear + quality)
+    # Step 2: Local analysis (regex tickers + keyword tags, no API calls)
     analysis = analyze_content(
         title=fetched.title,
         text=fetched.text,
@@ -148,7 +166,7 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
     # Step 3: Write to Obsidian vault
     obsidian_path = write_to_vault(
         title=analysis.title,
-        url=req.url,
+        url=normalized,
         source_type=fetched.source_type,
         summary=analysis.summary,
         content=fetched.text,
@@ -162,10 +180,10 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
         author=fetched.author,
     )
 
-    # Step 4: Save to database
+    # Step 4: Save to database (use normalized URL for dedup)
     entry_id = insert_entry(
         db_path=db,
-        url=req.url,
+        url=normalized,
         source_type=fetched.source_type,
         title=analysis.title,
         content=fetched.text[:5000],
@@ -181,8 +199,8 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
     )
 
     logger.info(
-        "Ingested: id=%d title=%s tickers=%s quality=%s",
-        entry_id, analysis.title, analysis.tickers, analysis.quality_tier,
+        "Ingested: id=%d title=%s tickers=%s",
+        entry_id, analysis.title, analysis.tickers,
     )
 
     return JSONResponse({
@@ -192,11 +210,6 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
         "summary": analysis.summary,
         "tickers": analysis.tickers,
         "tags": analysis.tags,
-        "quality_tier": analysis.quality_tier,
-        "quality_score": analysis.quality_score,
-        "bull_case": analysis.bull_case,
-        "bear_case": analysis.bear_case,
-        "audit_notes": analysis.audit_notes,
         "obsidian_path": obsidian_path,
     })
 
@@ -224,7 +237,7 @@ def ingest_text(
         user_notes=req.notes,
     )
 
-    # Merge user-provided tags with AI-extracted tags
+    # Merge user-provided tags with extracted tags
     all_tags = list(dict.fromkeys(req.tags + analysis.tags))
 
     obsidian_path = write_to_vault(
@@ -266,10 +279,6 @@ def ingest_text(
         "summary": analysis.summary,
         "tickers": analysis.tickers,
         "tags": all_tags,
-        "quality_tier": analysis.quality_tier,
-        "quality_score": analysis.quality_score,
-        "bull_case": analysis.bull_case,
-        "bear_case": analysis.bear_case,
         "obsidian_path": obsidian_path,
     })
 

@@ -24,6 +24,24 @@ def _sanitize_filename(name: str) -> str:
     return cleaned[:80] or "untitled"
 
 
+def _ticker_wikilink(ticker: str) -> str:
+    """Create a wikilink for a ticker, e.g. [[2330-台積電]]."""
+    # Known ticker → name mapping (expand over time)
+    _NAMES: dict[str, str] = {
+        "2330": "台積電", "2454": "聯發科", "2317": "鴻海",
+        "2382": "廣達", "2308": "台達電", "3711": "日月光",
+        "2303": "聯電", "2412": "中華電", "2881": "富邦金",
+        "2882": "國泰金", "2886": "兆豐金", "2891": "中信金",
+        "3037": "欣興", "2357": "華碩", "6505": "台塑化",
+        "3034": "聯詠", "5274": "信驊", "3661": "世芯-KY",
+        "2603": "長榮", "2609": "陽明", "2615": "萬海",
+    }
+    name = _NAMES.get(ticker, "")
+    if name:
+        return f"[[{ticker}-{name}]]"
+    return f"[[{ticker}]]"
+
+
 def write_to_vault(
     title: str,
     url: str,
@@ -40,6 +58,11 @@ def write_to_vault(
     author: str = "",
 ) -> str:
     """Write a knowledge entry as a Markdown file in the Obsidian vault.
+
+    Optimized for Obsidian Second Brain workflow:
+    - YAML frontmatter compatible with Dataview plugin
+    - Wikilinks for Graph View connections
+    - Tags as proper Obsidian tags
 
     Files are saved to: vault/knowledge/YYYY-MM/title.md
     Returns the relative path within the vault.
@@ -59,59 +82,54 @@ def write_to_vault(
     if filepath.exists():
         filepath = folder / f"{date_prefix}_{safe_title}_{now.strftime('%H%M%S')}.md"
 
-    # Build frontmatter
-    ticker_str = ", ".join(tickers) if tickers else "none"
-    tag_list = " ".join(f"#{t}" for t in tags) if tags else ""
+    # Build YAML frontmatter (Dataview compatible)
+    ticker_yaml = "\n".join(f"  - \"{t}\"" for t in tickers) if tickers else "  []"
+    tag_yaml = "\n".join(f"  - {t}" for t in tags) if tags else "  []"
 
-    # Quality emoji
-    quality_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(
-        quality_tier, "⚪"
-    )
+    # Wikilinks for graph view
+    ticker_links = " ".join(_ticker_wikilink(t) for t in tickers)
+    tag_links = " ".join(f"#{t}" for t in tags)
 
     md = f"""---
 title: "{title}"
 url: "{url}"
 source: {source_type}
-tickers: [{ticker_str}]
-quality: {quality_tier} ({quality_score:.1f})
-date: {now.strftime("%Y-%m-%d %H:%M")}
-tags: [{", ".join(tags)}]
+author: "{author}"
+tickers:
+{ticker_yaml}
+tags:
+{tag_yaml}
+quality: {quality_tier}
+quality_score: {quality_score:.1f}
+reviewed: false
+date: {now.strftime("%Y-%m-%d")}
+created: {now.strftime("%Y-%m-%dT%H:%M")}
 ---
 
 # {title}
 
-{quality_emoji} **品質: {quality_tier.upper()}** ({quality_score:.1f}/1.0) | 來源: {source_type}
-{f"作者: {author}" if author else ""}
-🔗 [原文連結]({url})
+來源: {source_type} | {f"作者: @{author} | " if author else ""}[原文連結]({url})
+擷取時間: {now.strftime("%Y-%m-%d %H:%M")}
+
+## 相關標的
+
+{ticker_links or "（無）"}
 
 ## 摘要
 
 {summary}
 
-## 🟢 Bull Case
+## 多空分析
 
-{bull_case or "（尚未分析）"}
+> 待整理 — 在 Claude Code 中執行深度分析
 
-## 🔴 Bear Case / 盲點
+## 原文內容
 
-{bear_case or "（尚未分析）"}
-
-## ⚖️ 審核筆記
-
-{audit_notes or "（尚未審核）"}
-
-## 相關標的
-
-{ticker_str}
-
-{tag_list}
+{content[:3000]}
 
 ---
 
-## 原文節錄
-
-{content[:2000]}
-
+{tag_links}
 """
 
     filepath.write_text(md, encoding="utf-8")
