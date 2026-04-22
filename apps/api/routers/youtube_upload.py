@@ -23,8 +23,10 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
+
+from ..deps import require_api_key as _check_api_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -195,6 +197,7 @@ async def youtube_upload(
     tags: str = Form("台股,三大法人,籌碼分析,AI投資實驗室", description="Comma-separated tags"),
     privacy: str = Form("private", description="public | unlisted | private"),
     thumbnail: UploadFile | None = File(None, description="Thumbnail PNG (optional)"),
+    _api_key: None = Depends(_check_api_key),
 ) -> JSONResponse:
     """
     Upload an MP4 to YouTube and optionally set a custom thumbnail.
@@ -234,8 +237,8 @@ async def youtube_upload(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("YouTube upload failed")
-        raise HTTPException(500, f"YouTube upload failed: {exc}") from exc
+        logger.exception("YouTube upload failed: %s", exc)
+        raise HTTPException(500, "YouTube upload failed. Check server logs for details.") from exc
     finally:
         Path(tmp_video.name).unlink(missing_ok=True)
         if tmp_thumb_path:

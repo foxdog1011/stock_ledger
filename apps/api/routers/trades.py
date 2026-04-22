@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from ..config import AUTO_REFRESH_QUOTES_ON_TRADE, QUOTE_PROVIDER
 from ..deps import get_ledger
-from ..schemas import AddTradeIn
+from ..schemas import AddTradeIn, paginate
 from ledger import StockLedger
 
 router = APIRouter()
@@ -97,17 +97,26 @@ def list_trades(
     start: Optional[str] = Query(None, description="YYYY-MM-DD"),
     end: Optional[str] = Query(None, description="YYYY-MM-DD"),
     include_void: bool = Query(False, description="Include voided trades (is_void=1)"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(0, ge=0, description="Items per page (0 = return all)"),
     ledger: StockLedger = Depends(get_ledger),
-) -> list[dict]:
+):
     """
     Return trade records, optionally filtered by symbol and/or date range.
 
     Voided trades are **excluded** by default.
     Pass `include_void=true` to see them (they carry `is_void: 1`).
+
+    **Pagination**: pass `page` and `page_size` to paginate results.
+    When `page_size=0` (default), all results are returned as a plain list
+    for backward compatibility.
     """
-    return ledger.trade_history(
-        symbol=symbol, start=start, end=end, include_void=include_void
+    from ..schemas import PageParams
+
+    rows = ledger.trade_history(
+        symbol=symbol, start=start, end=end, include_void=include_void,
     )
+    return paginate(rows, PageParams(page=page, page_size=page_size))
 
 
 @router.patch(

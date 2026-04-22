@@ -1,9 +1,58 @@
 """Pydantic request / response schemas."""
 from __future__ import annotations
 
+import math
 import re
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Generic, List, Literal, Optional, TypeVar
+
 from pydantic import BaseModel, Field, field_validator
+
+T = TypeVar("T")
+
+
+# ── Pagination ─────────────────────────────────────────────────────────────────
+
+class PageParams(BaseModel):
+    """Query parameters for pagination.
+
+    When ``page_size`` is 0 (or omitted), all results are returned
+    without pagination — preserving backward compatibility.
+    """
+
+    page: int = Field(1, ge=1, description="Page number (1-indexed)")
+    page_size: int = Field(0, ge=0, description="Items per page (0 = return all)")
+
+
+class Page(BaseModel, Generic[T]):
+    """Envelope for paginated responses."""
+
+    items: List[T]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+def paginate(items: List, params: PageParams) -> Page | List:
+    """Apply pagination to an in-memory list.
+
+    Returns the full list when ``page_size`` is 0 (backward compatible).
+    Otherwise returns a :class:`Page` envelope.
+    """
+    if params.page_size == 0:
+        return items
+
+    total = len(items)
+    pages = max(1, math.ceil(total / params.page_size))
+    start = (params.page - 1) * params.page_size
+    end = start + params.page_size
+    return Page(
+        items=items[start:end],
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        pages=pages,
+    )
 
 
 # ── Cash ─────────────────────────────────────────────────────────────────────

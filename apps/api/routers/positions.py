@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_ledger
-from ..schemas import PositionOut
+from ..schemas import PageParams, PositionOut, paginate
 from ledger import StockLedger
 
 router = APIRouter()
@@ -11,12 +11,13 @@ router = APIRouter()
 
 @router.get(
     "/positions",
-    response_model=list[PositionOut],
     summary="Current positions with avg cost and P&L",
 )
 def get_positions(
     as_of: Optional[str] = Query(None, description="YYYY-MM-DD  (default: today)"),
     include_closed: bool = Query(False, description="Include fully-closed positions"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(0, ge=0, description="Items per page (0 = return all)"),
     ledger: StockLedger = Depends(get_ledger),
 ):
     """
@@ -29,8 +30,13 @@ def get_positions(
 
     Set `include_closed=true` to also see fully-sold positions
     (qty = 0 but realized_pnl may be non-zero).
+
+    **Pagination**: pass `page` and `page_size` to paginate results.
+    When `page_size=0` (default), all results are returned as a plain list
+    for backward compatibility.
     """
-    return ledger.all_positions_pnl(as_of=as_of, open_only=not include_closed)
+    rows = ledger.all_positions_pnl(as_of=as_of, open_only=not include_closed)
+    return paginate(rows, PageParams(page=page, page_size=page_size))
 
 
 @router.get("/positions/detail", summary="Extended position detail with WAC history")

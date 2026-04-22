@@ -83,13 +83,4 @@ class FinMindProvider(PriceProvider):
             close=float(latest["Close"]),
         )
 
-    def get_bulk_close(
-        self, symbols: list[str], as_of: str
-    ) -> dict[str, PriceRecord]:
-        """Fetch per-symbol (FinMind has no bulk endpoint)."""
-        result: dict[str, PriceRecord] = {}
-        for sym in symbols:
-            rec = self.get_latest_close(sym, as_of)
-            if rec:
-                result[sym] = rec
-        return result
+    # get_bulk_close inherited from PriceProvider (per-symbol loop)

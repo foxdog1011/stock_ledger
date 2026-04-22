@@ -15,12 +15,13 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
+from ..deps import require_api_key
 from domain.knowledge.fetcher import fetch_content
 from domain.knowledge.analyzer import analyze_content
 from domain.knowledge.obsidian import write_to_vault
@@ -45,18 +46,6 @@ _DB_PATH = os.environ.get("DB_PATH", "ledger.db")
 
 def _get_db() -> str:
     return os.environ.get("DB_PATH", _DB_PATH)
-
-
-def _check_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> None:
-    """Validate API key for write endpoints (ingest, review, debate).
-
-    Uses JARVIS_KEY env var. If not set, auth is disabled (local dev).
-    """
-    expected = os.environ.get("JARVIS_KEY", "").strip()
-    if not expected:
-        return  # No key configured = local dev mode, skip auth
-    if x_api_key != expected:
-        raise HTTPException(401, "Invalid or missing API key (X-API-Key header)")
 
 
 # ── Request/Response models ─────────────────────────────────────────────────
@@ -87,15 +76,17 @@ class ReviewRequest(BaseModel):
 @router.get("/knowledge/ingest", summary="Ingest a URL (GET shortcut for iOS)")
 def ingest_url_get(
     request: Request,
-    x_api_key: str = Header(None, alias="X-API-Key"),
+    _api_key: str = Depends(require_api_key),
 ) -> JSONResponse:
     """GET version for iOS Shortcuts — accepts url as query parameter.
 
     Uses raw query string to preserve '&' in target URLs (e.g. Threads URLs
     with ?xmt=...&slof=... would be split by FastAPI's normal parsing).
     """
-    _check_api_key(x_api_key)
+    import sys
+    print(f"[INGEST-GET] ENTRY method={request.method} url={str(request.url)[:200]} api_key={'SET' if _api_key else 'NONE'}", file=sys.stderr, flush=True)
     raw_qs = str(request.url.query)
+    print(f"[INGEST-GET] raw_qs={raw_qs[:200]}", file=sys.stderr, flush=True)
     if not raw_qs.startswith("url="):
         raise HTTPException(400, "Missing 'url' query parameter")
     # Everything after 'url=' is the target URL (may contain & from the target)
@@ -103,6 +94,7 @@ def ingest_url_get(
     # URL-decode percent-encoded characters
     from urllib.parse import unquote
     target_url = unquote(target_url)
+    print(f"[INGEST-GET] target_url={target_url[:200]}", file=sys.stderr, flush=True)
     if not target_url:
         raise HTTPException(400, "Empty 'url' parameter")
     req = IngestURLRequest(url=target_url, source_type="auto", notes="")
@@ -110,16 +102,37 @@ def ingest_url_get(
 
 
 @router.post("/knowledge/ingest", summary="Ingest a URL into the knowledge base")
-def ingest_url(
-    req: IngestURLRequest,
-    x_api_key: str = Header(None, alias="X-API-Key"),
+async def ingest_url(
+    request: Request,
+    _api_key: str = Depends(require_api_key),
 ) -> JSONResponse:
-    _check_api_key(x_api_key)
     """Fetch content from URL, run AI analysis, save to DB + Obsidian vault.
 
     This is the main one-click ingestion endpoint. Supports Threads, Twitter/X,
     and any web page. Returns the analysis result with Bull/Bear cases.
+
+    Handles both proper JSON objects and string-encoded JSON (iOS Shortcuts
+    sometimes double-encodes the body).
     """
+    import json
+    raw = await request.body()
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(400, "Invalid JSON body")
+    # iOS Shortcuts may send body as a JSON string instead of object
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except (json.JSONDecodeError, TypeError):
+            raise HTTPException(400, "Invalid JSON body (double-encoded string)")
+    if not isinstance(data, dict) or "url" not in data:
+        raise HTTPException(400, "Missing 'url' field in request body")
+    req = IngestURLRequest(
+        url=data["url"],
+        source_type=data.get("source_type", "auto"),
+        notes=data.get("notes", ""),
+    )
     return _do_ingest(req, _get_db())
 
 
@@ -149,10 +162,13 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
         })
 
     # Step 1: Fetch content
-    logger.info("Ingesting URL: %s (source: %s)", req.url, req.source_type)
+    import sys
+    print(f"[INGEST] url={req.url[:150]}", file=sys.stderr, flush=True)
     fetched = fetch_content(req.url, req.source_type)
 
+    print(f"[INGEST] text_len={len(fetched.text or '')} title={fetched.title[:50]}", file=sys.stderr, flush=True)
     if not fetched.text or len(fetched.text.strip()) < 20:
+        print(f"[INGEST] FAIL: content too short: {fetched.text[:200]}", file=sys.stderr, flush=True)
         raise HTTPException(400, "無法擷取足夠的內容。請確認 URL 是否正確。")
 
     # Step 2: Local analysis (regex tickers + keyword tags, no API calls)
@@ -220,9 +236,8 @@ def _do_ingest(req: IngestURLRequest, db: str) -> JSONResponse:
 )
 def ingest_text(
     req: IngestTextRequest,
-    x_api_key: str = Header(None, alias="X-API-Key"),
+    _api_key: str = Depends(require_api_key),
 ) -> JSONResponse:
-    _check_api_key(x_api_key)
     """Manually paste text content for analysis. For content that can't be
     fetched by URL (e.g., screenshots, private messages)."""
     db = _get_db()
@@ -290,13 +305,42 @@ def list_knowledge(
     ticker: Optional[str] = None,
     tag: Optional[str] = None,
     quality: Optional[str] = None,
+    created_after: Optional[str] = None,
+    created_before: Optional[str] = None,
 ) -> JSONResponse:
     """List knowledge entries with optional filters."""
     db = _get_db()
-    entries = list_entries(db, limit, offset, ticker, tag, quality)
+    entries = list_entries(db, limit, offset, ticker, tag, quality, created_after, created_before)
     total = count_entries(db)
     return JSONResponse({
         "total": total,
+        "entries": [
+            {
+                "id": e.id,
+                "url": e.url,
+                "source_type": e.source_type,
+                "title": e.title,
+                "summary": e.summary,
+                "tickers": e.tickers,
+                "tags": e.tags,
+                "quality_tier": e.quality_tier,
+                "quality_score": e.quality_score,
+                "created_at": e.created_at,
+            }
+            for e in entries
+        ],
+    })
+
+
+@router.get("/knowledge/search", summary="Full-text search knowledge entries")
+def search_knowledge(q: str, limit: int = 20) -> JSONResponse:
+    """Search knowledge entries by keyword across title, summary, and content."""
+    from domain.knowledge.repository import search_entries
+    db = _get_db()
+    entries = search_entries(db, q, limit)
+    return JSONResponse({
+        "query": q,
+        "total": len(entries),
         "entries": [
             {
                 "id": e.id,
@@ -380,9 +424,8 @@ def get_knowledge(entry_id: int) -> JSONResponse:
 )
 def review_entry(
     entry_id: int,
-    x_api_key: str = Header(None, alias="X-API-Key"),
+    _api_key: str = Depends(require_api_key),
 ) -> JSONResponse:
-    _check_api_key(x_api_key)
     """Re-analyze an existing entry with the AI pipeline."""
     db = _get_db()
     entry = get_entry(db, entry_id)
@@ -422,9 +465,8 @@ def review_entry(
 )
 def debate_entry(
     entry_id: int,
-    x_api_key: str = Header(None, alias="X-API-Key"),
+    _api_key: str = Depends(require_api_key),
 ) -> JSONResponse:
-    _check_api_key(x_api_key)
     """Run the 4-agent debate pipeline (Extractor → Bull → Bear → Auditor).
 
     This is the deep review mode — more thorough than /review but uses

@@ -22,6 +22,13 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from domain.exceptions import (
+    DomainError,
+    EntityNotFoundError,
+    RateLimitError,
+    ValidationError,
+)
+
 from . import deps
 from .tz import TZ
 from .routers import (
@@ -242,6 +249,10 @@ async def lifespan(app: FastAPI):
     from domain.calendar.repository import init_calendar_tables
     init_calendar_tables(DB_PATH)
 
+    # Ensure cooldown tables exist
+    from domain.calendar.cooldown import init_cooldown_tables
+    init_cooldown_tables(DB_PATH)
+
     # Ensure knowledge tables exist
     from domain.knowledge.repository import init_knowledge_tables
     init_knowledge_tables(DB_PATH)
@@ -378,17 +389,67 @@ async def _unicode_error_handler(
 
 app.add_exception_handler(UnicodeDecodeError, _unicode_error_handler)
 
+
+# ── Domain exception handlers ────────────────────────────────────────────────
+# Order matters: specific subtypes first, then the generic DomainError base.
+
+
+@app.exception_handler(EntityNotFoundError)
+async def entity_not_found_handler(
+    request: Request, exc: EntityNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"ok": False, "error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_domain_error_handler(
+    request: Request, exc: ValidationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"ok": False, "error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(RateLimitError)
+async def rate_limit_domain_handler(
+    request: Request, exc: RateLimitError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"ok": False, "error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(DomainError)
+async def domain_error_handler(
+    request: Request, exc: DomainError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={"ok": False, "error": {"code": exc.code, "message": exc.message}},
+    )
+
+
 if DEMO_MODE:
     app.add_middleware(DemoReadOnlyMiddleware)
     logger.info("DEMO_MODE enabled — write operations are blocked")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:8000",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 PREFIX = "/api"

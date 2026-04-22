@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from fastapi import APIRouter, HTTPException, Query
+from ..deps import require_query_key
 
 router = APIRouter()
 
@@ -72,11 +72,7 @@ def get_tariffs(
 
 
 @router.post("/trump-put/alert", summary="Manual Discord alert trigger")
-def trigger_alert(key: str = Query(...)):
-    jarvis_key = os.environ.get("JARVIS_KEY", "")
-    if key != jarvis_key:
-        raise HTTPException(403, "Invalid key")
-
+def trigger_alert(key: str = Depends(require_query_key)):
     from domain.trump_put import service, discord_alert
     report = service.generate_report()
     ok = discord_alert.send_alert(report)

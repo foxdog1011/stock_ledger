@@ -49,7 +49,7 @@ class TestGetQuote(unittest.TestCase):
     def test_price_and_change_pct(self, mock_cls):
         mock_cls.return_value = self._make_ticker(150.0, 145.0)
         import os; os.environ.setdefault("DB_PATH", _tmp_db())
-        from apps.mcp.server import get_quote
+        from apps.mcp.tools.market import get_quote
         r = get_quote("AAPL")
         self.assertNotIn("error", r)
         self.assertEqual(r["symbol"], "AAPL")
@@ -61,7 +61,7 @@ class TestGetQuote(unittest.TestCase):
     def test_taiwan_symbol_gets_tw_suffix(self, mock_cls):
         mock_cls.return_value = self._make_ticker(600.0, 595.0)
         import os; os.environ.setdefault("DB_PATH", _tmp_db())
-        from apps.mcp.server import get_quote
+        from apps.mcp.tools.market import get_quote
         r = get_quote("2330")
         self.assertEqual(r["yf_symbol"], "2330.TW")
 
@@ -73,7 +73,7 @@ class TestGetTechnicalIndicators(unittest.TestCase):
     def test_all_indicator_sections_present(self, mock_cls):
         mock_cls.return_value.history.return_value = _make_hist_df()
         import os; os.environ.setdefault("DB_PATH", _tmp_db())
-        from apps.mcp.server import get_technical_indicators
+        from apps.mcp.tools.market import get_technical_indicators
         r = get_technical_indicators("AAPL", days=120)
         self.assertNotIn("error", r)
         for key in ("ma", "rsi14", "rsi_signal", "macd", "bollinger", "latest_close"):
@@ -90,7 +90,7 @@ class TestGetTechnicalIndicators(unittest.TestCase):
         import pandas as pd
         mock_cls.return_value.history.return_value = pd.DataFrame()
         import os; os.environ.setdefault("DB_PATH", _tmp_db())
-        from apps.mcp.server import get_technical_indicators
+        from apps.mcp.tools.market import get_technical_indicators
         r = get_technical_indicators("BADTICKER")
         self.assertIn("error", r)
 
@@ -110,7 +110,7 @@ class TestGetNews(unittest.TestCase):
     def test_articles_parsed_correctly(self, mock_cls):
         mock_cls.return_value.news = self._mock_news()
         import os; os.environ.setdefault("DB_PATH", _tmp_db())
-        from apps.mcp.server import get_news
+        from apps.mcp.tools.market import get_news
         r = get_news("AAPL", count=2)
         self.assertNotIn("error", r)
         self.assertEqual(r["count"], 2)
@@ -121,7 +121,7 @@ class TestGetNews(unittest.TestCase):
     def test_empty_news_ok(self, mock_cls):
         mock_cls.return_value.news = []
         import os; os.environ.setdefault("DB_PATH", _tmp_db())
-        from apps.mcp.server import get_news
+        from apps.mcp.tools.market import get_news
         r = get_news("UNKNOWN")
         self.assertEqual(r["count"], 0)
         self.assertEqual(r["articles"], [])

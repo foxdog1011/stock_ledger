@@ -69,15 +69,4 @@ class YahooProvider(PriceProvider):
 
         return PriceRecord(symbol=symbol, date=best_date, close=best_close)
 
-    def get_bulk_close(
-        self, symbols: list[str], as_of: str
-    ) -> dict[str, PriceRecord]:
-        result: dict[str, PriceRecord] = {}
-        for sym in symbols:
-            try:
-                rec = self.get_latest_close(sym, as_of)
-                if rec:
-                    result[sym] = rec
-            except Exception:
-                pass
-        return result
+    # get_bulk_close inherited from PriceProvider (per-symbol loop)

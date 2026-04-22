@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_ledger
-from ..schemas import AddCashIn, CashBalanceOut, CashTxOut
+from ..schemas import AddCashIn, CashBalanceOut, CashTxOut, PageParams, paginate
 from ledger import StockLedger
 
 router = APIRouter()
@@ -46,8 +46,10 @@ def cash_tx(
     start: Optional[str] = Query(None, description="YYYY-MM-DD"),
     end: Optional[str] = Query(None, description="YYYY-MM-DD"),
     include_void: bool = Query(False, description="Include voided cash entries"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(0, ge=0, description="Items per page (0 = return all)"),
     ledger: StockLedger = Depends(get_ledger),
-) -> list[dict]:
+):
     """
     Return all cash movements (manual deposits/withdrawals **and** trade impacts)
     sorted by date.
@@ -55,8 +57,13 @@ def cash_tx(
     Each entry carries an absolute `balance` field (running total from the
     very first recorded transaction).  Voided cash entries are excluded by
     default; pass ``include_void=true`` to see them.
+
+    **Pagination**: pass `page` and `page_size` to paginate results.
+    When `page_size=0` (default), all results are returned as a plain list
+    for backward compatibility.
     """
-    return ledger.cash_flow(start=start, end=end, include_void=include_void)
+    rows = ledger.cash_flow(start=start, end=end, include_void=include_void)
+    return paginate(rows, PageParams(page=page, page_size=page_size))
 
 
 @router.patch("/cash/{cash_id}/void", summary="Void (soft-delete) a cash entry")
