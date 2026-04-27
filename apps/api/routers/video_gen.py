@@ -15,8 +15,10 @@ Optional TTS via ElevenLabs (set ELEVENLABS_API_KEY env var).
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
+import subprocess
 import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -533,6 +535,239 @@ def market_snapshot(_api_key: None = Depends(_check_api_key)):
         logger.debug("Top movers not available: %s", e)
 
     return snapshot
+
+
+# ── Competitor trends cache ─────────────────────────────────────────────────
+_competitor_trends_cache: dict = {"data": None, "ts": 0.0}
+_COMPETITOR_CACHE_TTL = 4 * 3600  # 4 hours in seconds
+
+
+@router.get("/video-gen/competitor-trends", summary="Trending stock topics from competitor YouTube channels")
+def competitor_trends(_api_key: None = Depends(_check_api_key)):
+    """Research trending stock analysis topics from Taiwan investment YouTube channels.
+
+    Uses Gemini CLI to discover what competitors are covering, returning
+    structured trending topics, hot stocks, and content gaps.
+    Results are cached for 4 hours.
+    """
+    import time
+
+    now = time.time()
+    cached = _competitor_trends_cache
+    if cached["data"] is not None and (now - cached["ts"]) < _COMPETITOR_CACHE_TTL:
+        return cached["data"]
+
+    prompt = (
+        "台灣投資 YouTube 頻道（如柴鼠兄弟、投資嗨嗨、Mr. Market）"
+        "最近 7 天最熱門的影片主題是什麼？哪些股票/產業被討論最多？\n\n"
+        "請用以下 JSON 格式回覆，不要加任何其他文字：\n"
+        "{\n"
+        '  "trending_topics": ["主題1", "主題2", ...],\n'
+        '  "competitor_hot_stocks": ["股票代號1", "股票代號2", ...],\n'
+        '  "content_gaps": ["尚未有人做XX分析", ...]\n'
+        "}"
+    )
+
+    fallback = {
+        "generated_at": datetime.now().isoformat(),
+        "trending_topics": [],
+        "competitor_hot_stocks": [],
+        "content_gaps": [],
+        "source": "gemini",
+        "error": "Gemini unavailable",
+    }
+
+    try:
+        result = subprocess.run(
+            ["gemini"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode != 0:
+            logger.warning("Gemini CLI failed (rc=%d): %s", result.returncode, result.stderr[:200])
+            return fallback
+
+        raw = result.stdout.strip()
+
+        # Try to extract JSON from the response (handle markdown fences)
+        json_str = raw
+        if "```" in raw:
+            # Extract content between first ``` and last ```
+            parts = raw.split("```")
+            for part in parts[1:]:
+                cleaned = part.strip()
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:].strip()
+                if cleaned.startswith("{"):
+                    json_str = cleaned
+                    break
+
+        try:
+            parsed = json.loads(json_str)
+            response = {
+                "generated_at": datetime.now().isoformat(),
+                "trending_topics": parsed.get("trending_topics", []),
+                "competitor_hot_stocks": parsed.get("competitor_hot_stocks", []),
+                "content_gaps": parsed.get("content_gaps", []),
+                "source": "gemini",
+            }
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse Gemini JSON, returning raw text")
+            response = {
+                "generated_at": datetime.now().isoformat(),
+                "trending_topics": [],
+                "competitor_hot_stocks": [],
+                "content_gaps": [],
+                "source": "gemini",
+                "raw_response": raw[:2000],
+            }
+
+        _competitor_trends_cache["data"] = response
+        _competitor_trends_cache["ts"] = now
+        return response
+
+    except subprocess.TimeoutExpired:
+        logger.warning("Gemini CLI timed out after 60s")
+        return fallback
+    except FileNotFoundError:
+        logger.warning("Gemini CLI not found on PATH")
+        return fallback
+    except Exception as e:
+        logger.warning("Competitor trends failed: %s", e)
+        return fallback
+
+
+@router.get("/video-gen/market-heat", summary="Today's hottest stocks/sectors for video content selection")
+def market_heat(_api_key: None = Depends(_check_api_key)):
+    """Return heat-ranked stocks and sectors based on institutional chip data.
+
+    Heat score formula: abs(foreign_net) + abs(trust_net) * 2
+    (投信 weighted higher for retail interest signal).
+    """
+    from apps.api.config import DB_PATH
+
+    result: dict = {
+        "heat_date": None,
+        "hot_stocks": [],
+        "hot_sectors": [],
+        "overall_heat": "low",
+    }
+
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        conn.row_factory = sqlite3.Row
+
+        # Find latest trading day
+        row = conn.execute("SELECT MAX(trade_date) AS latest FROM chip_daily").fetchone()
+        if not row or not row["latest"]:
+            conn.close()
+            return result
+
+        heat_date = row["latest"]
+        result["heat_date"] = heat_date
+
+        # Fetch all chip data for the latest trading day
+        chips = conn.execute(
+            """SELECT symbol, foreign_net, trust_net, dealer_net, total_net
+               FROM chip_daily
+               WHERE trade_date = ?""",
+            (heat_date,),
+        ).fetchall()
+
+        if not chips:
+            conn.close()
+            return result
+
+        # Compute heat score for each stock
+        scored = []
+        for c in chips:
+            foreign_net = c["foreign_net"] or 0
+            trust_net = c["trust_net"] or 0
+            heat_score = abs(foreign_net) + abs(trust_net) * 2
+            scored.append({
+                "symbol": c["symbol"],
+                "foreign_net": foreign_net,
+                "trust_net": trust_net,
+                "dealer_net": c["dealer_net"] or 0,
+                "total_net": c["total_net"] or 0,
+                "heat_score": heat_score,
+            })
+
+        # Sort by heat_score descending
+        scored.sort(key=lambda x: x["heat_score"], reverse=True)
+
+        # Top 5 by foreign_net (absolute)
+        by_foreign = sorted(scored, key=lambda x: abs(x["foreign_net"]), reverse=True)[:5]
+        # Top 5 by trust_net (absolute)
+        by_trust = sorted(scored, key=lambda x: abs(x["trust_net"]), reverse=True)[:5]
+
+        # Overall top 10 by heat_score (deduplicated)
+        top_symbols_seen: set[str] = set()
+        hot_stocks: list[dict] = []
+        for s in scored:
+            if s["symbol"] in top_symbols_seen:
+                continue
+            top_symbols_seen.add(s["symbol"])
+            hot_stocks.append(s)
+            if len(hot_stocks) >= 10:
+                break
+
+        result["hot_stocks"] = hot_stocks
+
+        # Sector aggregation via company_master join
+        try:
+            sector_rows = conn.execute(
+                """SELECT cm.sector, SUM(ABS(cd.foreign_net)) AS foreign_abs,
+                          SUM(ABS(cd.trust_net)) AS trust_abs,
+                          COUNT(*) AS stock_count,
+                          SUM(ABS(cd.foreign_net) + ABS(cd.trust_net) * 2) AS sector_heat
+                   FROM chip_daily cd
+                   JOIN company_master cm ON cd.symbol = cm.symbol
+                   WHERE cd.trade_date = ? AND cm.sector IS NOT NULL AND cm.sector != ''
+                   GROUP BY cm.sector
+                   ORDER BY sector_heat DESC
+                   LIMIT 10""",
+                (heat_date,),
+            ).fetchall()
+
+            result["hot_sectors"] = [
+                {
+                    "sector": r["sector"],
+                    "foreign_abs_total": r["foreign_abs"],
+                    "trust_abs_total": r["trust_abs"],
+                    "stock_count": r["stock_count"],
+                    "sector_heat": r["sector_heat"],
+                }
+                for r in sector_rows
+            ]
+        except Exception as e:
+            logger.debug("Sector aggregation not available: %s", e)
+
+        conn.close()
+
+        # Determine overall heat level from top stock scores
+        if hot_stocks:
+            max_heat = hot_stocks[0]["heat_score"]
+            if max_heat > 50000:
+                result["overall_heat"] = "high"
+            elif max_heat > 10000:
+                result["overall_heat"] = "medium"
+
+        # Attach breakdown lists for convenience
+        result["top_foreign"] = [
+            {"symbol": s["symbol"], "foreign_net": s["foreign_net"]} for s in by_foreign
+        ]
+        result["top_trust"] = [
+            {"symbol": s["symbol"], "trust_net": s["trust_net"]} for s in by_trust
+        ]
+
+    except Exception as e:
+        logger.warning("market-heat query failed: %s", e)
+
+    return result
 
 
 @router.post(
