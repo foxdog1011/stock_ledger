@@ -499,9 +499,11 @@ class TestDebateModule:
         from apps.api.main import app
 
         os.environ["DB_PATH"] = db_path
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/knowledge/99999/debate")
-        assert resp.status_code == 404
+        env = {k: v for k, v in os.environ.items() if k != "JARVIS_KEY"}
+        with patch.dict(os.environ, env, clear=True):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/api/knowledge/99999/debate")
+            assert resp.status_code == 404
 
 
 # ── API integration tests ───────────────────────────────────────────────────
@@ -526,8 +528,7 @@ class TestKnowledgeAPI:
         from fastapi.testclient import TestClient
         from apps.api.main import app
 
-        # Use raise_server_exceptions=True to surface the actual error
-        client = TestClient(app, raise_server_exceptions=True)
+        client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/knowledge")
         assert resp.status_code == 200
         data = resp.json()
@@ -557,12 +558,14 @@ class TestKnowledgeAPI:
         from fastapi.testclient import TestClient
         from apps.api.main import app
 
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/knowledge/ingest-text", json={
-            "title": "Test",
-            "content": "Too short",
-        })
-        assert resp.status_code == 400
+        env = {k: v for k, v in os.environ.items() if k != "JARVIS_KEY"}
+        with patch.dict(os.environ, env, clear=True):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/api/knowledge/ingest-text", json={
+                "title": "Test",
+                "content": "Too short",
+            })
+            assert resp.status_code == 400
 
     def test_ingest_text_rejected_without_key(self, db_path: str) -> None:
         """Write endpoints require X-API-Key when JARVIS_KEY is set."""

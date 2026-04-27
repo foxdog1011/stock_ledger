@@ -40,6 +40,26 @@ def init_knowledge_tables(db_path: str) -> None:
     con = sqlite3.connect(db_path)
     try:
         con.executescript(_CREATE_TABLE + _CREATE_INDEX)
+        con.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts
+            USING fts5(title, summary, content, content=knowledge_entries, content_rowid=id, tokenize="trigram")
+        """)
+        con.execute("""
+            CREATE TRIGGER IF NOT EXISTS knowledge_fts_ai AFTER INSERT ON knowledge_entries BEGIN
+                INSERT INTO knowledge_fts(rowid, title, summary, content) VALUES (new.id, new.title, new.summary, new.content);
+            END
+        """)
+        con.execute("""
+            CREATE TRIGGER IF NOT EXISTS knowledge_fts_ad AFTER DELETE ON knowledge_entries BEGIN
+                INSERT INTO knowledge_fts(knowledge_fts, rowid, title, summary, content) VALUES('delete', old.id, old.title, old.summary, old.content);
+            END
+        """)
+        con.execute("""
+            CREATE TRIGGER IF NOT EXISTS knowledge_fts_au AFTER UPDATE ON knowledge_entries BEGIN
+                INSERT INTO knowledge_fts(knowledge_fts, rowid, title, summary, content) VALUES('delete', old.id, old.title, old.summary, old.content);
+                INSERT INTO knowledge_fts(rowid, title, summary, content) VALUES (new.id, new.title, new.summary, new.content);
+            END
+        """)
         con.commit()
     finally:
         con.close()
@@ -135,6 +155,8 @@ def list_entries(
     ticker: str | None = None,
     tag: str | None = None,
     quality_tier: str | None = None,
+    created_after: str | None = None,
+    created_before: str | None = None,
 ) -> list[KnowledgeEntry]:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
@@ -150,6 +172,12 @@ def list_entries(
         if quality_tier:
             query += " AND quality_tier = ?"
             params.append(quality_tier)
+        if created_after:
+            query += " AND created_at >= ?"
+            params.append(created_after)
+        if created_before:
+            query += " AND created_at <= ?"
+            params.append(created_before)
         query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = con.execute(query, params).fetchall()
@@ -189,5 +217,25 @@ def count_entries(db_path: str) -> int:
     try:
         row = con.execute("SELECT COUNT(*) FROM knowledge_entries").fetchone()
         return row[0] if row else 0
+    finally:
+        con.close()
+
+
+def search_entries(db_path: str, query: str, limit: int = 20) -> list[KnowledgeEntry]:
+    """Full-text search across title, summary, and content."""
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            """
+            SELECT e.* FROM knowledge_entries e
+            JOIN knowledge_fts f ON e.id = f.rowid
+            WHERE knowledge_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+            """,
+            (query, limit),
+        ).fetchall()
+        return [_row_to_entry(r) for r in rows]
     finally:
         con.close()

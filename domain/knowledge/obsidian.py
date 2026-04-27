@@ -24,19 +24,48 @@ def _sanitize_filename(name: str) -> str:
     return cleaned[:80] or "untitled"
 
 
+_TICKER_NAMES_CACHE: dict[str, str] | None = None
+
+# Hardcoded fallback mapping for when the universe DB is unavailable
+_TICKER_NAMES_FALLBACK: dict[str, str] = {
+    "2330": "台積電", "2454": "聯發科", "2317": "鴻海",
+    "2382": "廣達", "2308": "台達電", "3711": "日月光",
+    "2303": "聯電", "2412": "中華電", "2881": "富邦金",
+    "2882": "國泰金", "2886": "兆豐金", "2891": "中信金",
+    "3037": "欣興", "2357": "華碩", "6505": "台塑化",
+    "3034": "聯詠", "5274": "信驊", "3661": "世芯-KY",
+    "2603": "長榮", "2609": "陽明", "2615": "萬海",
+}
+
+
+def _load_ticker_names() -> dict[str, str]:
+    """Load ticker->name mapping from universe DB + hardcoded fallbacks."""
+    names = dict(_TICKER_NAMES_FALLBACK)
+    try:
+        import sqlite3
+        db_path = os.environ.get("DB_PATH", "ledger.db")
+        con = sqlite3.connect(db_path)
+        rows = con.execute("SELECT symbol, name FROM company_master").fetchall()
+        con.close()
+        for symbol, name in rows:
+            names[symbol] = name  # DB overrides hardcoded
+    except Exception:
+        pass  # Fall back to hardcoded
+    return names
+
+
+def _get_ticker_names() -> dict[str, str]:
+    """Return cached ticker->name mapping."""
+    global _TICKER_NAMES_CACHE
+    if _TICKER_NAMES_CACHE is None:
+        _TICKER_NAMES_CACHE = _load_ticker_names()
+    return _TICKER_NAMES_CACHE
+
+
 def _ticker_wikilink(ticker: str) -> str:
     """Create a wikilink for a ticker, e.g. [[2330-台積電]]."""
-    # Known ticker → name mapping (expand over time)
-    _NAMES: dict[str, str] = {
-        "2330": "台積電", "2454": "聯發科", "2317": "鴻海",
-        "2382": "廣達", "2308": "台達電", "3711": "日月光",
-        "2303": "聯電", "2412": "中華電", "2881": "富邦金",
-        "2882": "國泰金", "2886": "兆豐金", "2891": "中信金",
-        "3037": "欣興", "2357": "華碩", "6505": "台塑化",
-        "3034": "聯詠", "5274": "信驊", "3661": "世芯-KY",
-        "2603": "長榮", "2609": "陽明", "2615": "萬海",
-    }
-    name = _NAMES.get(ticker, "")
+    names = _get_ticker_names()
+    name = names.get(ticker, "")
     if name:
         return f"[[{ticker}-{name}]]"
     return f"[[{ticker}]]"

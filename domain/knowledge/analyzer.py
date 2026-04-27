@@ -12,6 +12,7 @@ via Claude Code conversations reading the Obsidian vault — zero API cost.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 
@@ -40,8 +41,36 @@ _TAG_KEYWORDS: dict[str, list[str]] = {
 # Use lookaround to handle Chinese-ASCII boundaries where \b may not match
 _US_TICKER_PATTERNS = re.compile(
     r'(?<![A-Za-z])(AAPL|MSFT|GOOGL|GOOG|AMZN|NVDA|META|TSLA|AMD|INTC|ARM|TSM|AVGO'
-    r'|QCOM|MU|ASML|LRCX|KLAC|AMAT|MRVL|SMCI|DELL|HPE)(?![A-Za-z])'
+    r'|QCOM|MU|ASML|LRCX|KLAC|AMAT|MRVL|SMCI|DELL|HPE'
+    r'|NFLX|CRM|ORCL|IBM|UBER|PLTR|SNOW|COIN|SQ|SHOP|NET|DDOG|ZS|CRWD|PANW'
+    r'|ABNB|DASH|RBLX|RIVN|LCID|NIO|XPEV|LI|BABA|JD|PDD|BIDU|TCEHY)(?![A-Za-z])'
 )
+
+# ── Universe DB integration for Taiwan ticker validation ─────────────────────
+
+_KNOWN_TW_TICKERS: set[str] | None = None
+
+
+def _load_known_tickers(db_path: str | None = None) -> set[str]:
+    """Load known Taiwan ticker symbols from the universe database."""
+    if db_path is None:
+        db_path = os.environ.get("DB_PATH", "ledger.db")
+    try:
+        import sqlite3
+        con = sqlite3.connect(db_path)
+        rows = con.execute("SELECT symbol FROM company_master").fetchall()
+        con.close()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()  # DB not available, fall back to regex-only
+
+
+def _get_known_tickers() -> set[str]:
+    """Return cached set of known Taiwan tickers from the universe DB."""
+    global _KNOWN_TW_TICKERS
+    if _KNOWN_TW_TICKERS is None:
+        _KNOWN_TW_TICKERS = _load_known_tickers()
+    return _KNOWN_TW_TICKERS
 
 
 @dataclass(frozen=True)
@@ -59,7 +88,11 @@ class AnalysisResult:
 
 
 def _extract_tickers_regex(text: str) -> list[str]:
-    """Extract Taiwan stock tickers (4-digit numbers) from text."""
+    """Extract Taiwan stock tickers (4-digit numbers) from text.
+
+    If the universe DB is available, only returns tickers that exist in
+    company_master. Otherwise falls back to range-based filtering.
+    """
     # Match patterns like 2330, (2330), 2330.TW
     matches = re.findall(r'\b(\d{4})\b', text)
     # Filter to valid TWSE range (1000-9999), exclude common years
@@ -68,7 +101,14 @@ def _extract_tickers_regex(text: str) -> list[str]:
         m for m in matches
         if 1000 <= int(m) <= 9999 and not (2020 <= int(m) <= current_year + 1)
     ]
-    return list(dict.fromkeys(valid))  # dedupe preserving order
+    deduplicated = list(dict.fromkeys(valid))  # dedupe preserving order
+
+    # If universe DB is available, further filter to known tickers
+    known = _get_known_tickers()
+    if known:
+        deduplicated = [t for t in deduplicated if t in known]
+
+    return deduplicated
 
 
 def _extract_us_tickers(text: str) -> list[str]:

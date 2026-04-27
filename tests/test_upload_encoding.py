@@ -9,19 +9,32 @@ Verifies that:
 """
 from __future__ import annotations
 
+import os
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
 
-client = TestClient(app, raise_server_exceptions=False)
+
+def _client_no_auth() -> TestClient:
+    """Create a TestClient with JARVIS_KEY cleared to bypass auth."""
+    return TestClient(app, raise_server_exceptions=False)
 
 
 class TestUploadEncodingSafety:
     """Ensure upload endpoints handle Chinese text without UnicodeDecodeError."""
 
+    @pytest.fixture(autouse=True)
+    def _clear_auth(self):
+        env = {k: v for k, v in os.environ.items() if k != "JARVIS_KEY"}
+        with patch.dict(os.environ, env, clear=True):
+            yield
+
     def test_json_endpoint_rejects_form_data_with_422(self) -> None:
         """Sending multipart form data to the JSON endpoint should return 422, not 500."""
+        client = _client_no_auth()
         resp = client.post(
             "/api/video-gen/upload-youtube",
             files={"file": ("test.mp4", b"fake-video-data", "video/mp4")},
@@ -43,6 +56,7 @@ class TestUploadEncodingSafety:
 
     def test_json_endpoint_accepts_valid_json(self) -> None:
         """JSON body with Chinese title should be parsed without encoding errors."""
+        client = _client_no_auth()
         resp = client.post(
             "/api/video-gen/upload-youtube",
             json={
@@ -60,6 +74,7 @@ class TestUploadEncodingSafety:
 
     def test_form_endpoint_accepts_chinese_fields(self) -> None:
         """The multipart form-data endpoint should accept Chinese text."""
+        client = _client_no_auth()
         resp = client.post(
             "/api/video-gen/upload-youtube-form",
             files={"file": ("test.mp4", b"fake-video-data", "video/mp4")},
@@ -82,6 +97,7 @@ class TestUploadEncodingSafety:
 
     def test_validation_error_with_bytes_does_not_crash(self) -> None:
         """Validation errors containing raw bytes should be serialized safely."""
+        client = _client_no_auth()
         # Send completely invalid content type to trigger validation error
         resp = client.post(
             "/api/video-gen/upload-youtube",
