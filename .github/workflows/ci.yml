@@ -21,15 +21,16 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: |
-            apps/api/requirements.txt
-            apps/mcp/requirements.txt
+          cache-dependency-path: requirements-test.txt
 
       - name: Install dependencies
-        run: pip install -r apps/api/requirements.txt -r apps/mcp/requirements.txt pytest
+        run: pip install -r requirements-test.txt
+
+      - name: Create data directory
+        run: mkdir -p data
 
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short --cov=domain --cov=ledger --cov-report=term-missing
 
   # ── 2. Frontend lint ────────────────────────────────────────────────────────
   # Relies on "lint": "next lint" confirmed in apps/web/package.json

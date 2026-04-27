@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def ensure_digest_table(db_path=None) -> None:
-    with sqlite3.connect(db_path or DB_PATH) as conn:
+    target = db_path or DB_PATH
+    from pathlib import Path as _Path
+    _Path(target).parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(target) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS daily_digest (
                 id                    INTEGER PRIMARY KEY AUTOINCREMENT,
