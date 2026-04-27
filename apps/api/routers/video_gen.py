@@ -849,35 +849,9 @@ def n8n_upload_youtube(req: N8nUploadRequest, _api_key: None = Depends(_check_ap
         get_today_upload_count, get_last_upload_time,
     )
 
-    # ── Rate limiting ──
-    if not req.ignore_rate_limit:
-        today_count = get_today_upload_count(DB_PATH)
-        if today_count >= 3:
-            next_midnight = (datetime.now(tz=None).replace(hour=0, minute=0, second=0) + timedelta(days=1))
-            return JSONResponse({
-                "rate_limited": True,
-                "reason": "Max 3 uploads per day reached",
-                "today_count": today_count,
-                "suggested_retry": next_midnight.isoformat(),
-            })
-
-        last_upload = get_last_upload_time(DB_PATH)
-        if last_upload:
-            from datetime import timezone as _tz
-            now_utc = datetime.now(_tz.utc)
-            hours_since = (now_utc - last_upload).total_seconds() / 3600
-            if hours_since < 4:
-                retry_at = last_upload + timedelta(hours=4)
-                return JSONResponse({
-                    "rate_limited": True,
-                    "reason": "Minimum 4-hour spacing between uploads",
-                    "hours_since_last": round(hours_since, 2),
-                    "suggested_retry": retry_at.isoformat(),
-                })
-
     data_date = req.data_date or date.today().isoformat()
     symbol = req.symbol.upper() if req.symbol else ""
-    if symbol and data_date:
+    if symbol and data_date and not req.force:
         existing = find_existing_upload(DB_PATH, symbol, req.slot, data_date)
         if existing:
             logger.info("Duplicate upload skipped: %s/%s/%s", symbol, req.slot, data_date)
