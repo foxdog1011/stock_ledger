@@ -92,6 +92,9 @@ class N8nUploadRequest(BaseModel):
     thumbnail_path: Optional[str] = None
     symbol: str = ""
     data_date: str = ""  # YYYY-MM-DD, used for upload deduplication
+    ignore_rate_limit: bool = False  # n8n can override rate limiting
+    auto_comment: bool = True  # post channel-owner comment after upload
+    force: bool = False  # skip duplicate detection; re-upload even if same symbol/slot/date exists
 
 
 class N8nUploadResponse(BaseModel):
@@ -132,3 +135,90 @@ class GenerateSectorResponse(BaseModel):
     script: str
     sector_name: str
     slot: str
+
+
+# ── TDCC pick ───────────────────────────────────────────────────────────────
+
+class TdccSummary(BaseModel):
+    big_holder_pct_change: float  # 大戶 (>=400張) percentage change
+    retail_pct_change: float      # 散戶 (<=10張) percentage change
+    latest_date: str
+    prev_date: str
+
+
+class TdccPickResponse(BaseModel):
+    symbol: str
+    title: str
+    tdcc_summary: TdccSummary
+
+
+# ── Rotation pick ───────────────────────────────────────────────────────────
+
+class RotationPickResponse(BaseModel):
+    buy_symbol: str
+    buy_name: str
+    buy_lots: int
+    sell_symbol: str
+    sell_name: str
+    sell_lots: int
+    title: str
+
+
+# ── Weekly recap ───────────────────────────────────────────────────────────
+
+class WeeklyRecapRequest(BaseModel):
+    week_start: str = ""  # YYYY-MM-DD (Monday), defaults to last Monday
+
+
+class WeeklyRecapResponse(BaseModel):
+    video_path: str
+    thumbnail_path: Optional[str] = None
+    title: str
+    description: str
+    tags: list[str]
+    script: str
+    featured_symbols: list[str]
+    week_start: str
+    week_end: str
+
+
+# ── Community post ─────────────────────────────────────────────────────────
+
+class CommunityPostRequest(BaseModel):
+    poll_question: str = "本週最強族群？"
+    poll_options: list[str] = ["半導體", "金融", "傳產", "航運", "生技"]
+    additional_text: str = ""
+
+
+class CommunityPostResponse(BaseModel):
+    status: str
+    message: str
+    suggested_content: dict
+
+
+# ── Next-week outlook ─────────────────────────────────────────────────────
+
+class OutlookRequest(BaseModel):
+    format: str = "shorts"  # shorts or landscape
+
+
+class OutlookResponse(BaseModel):
+    video_path: str
+    thumbnail_path: Optional[str] = None
+    title: str
+    description: str
+    tags: list[str]
+    script: str
+    featured_symbols: list[str]
+
+
+# ── Check missed ─────────────────────────────────────────────────────────
+
+class CheckMissedResponse(BaseModel):
+    today: str
+    day_of_week: str
+    expected_slots: list[dict]
+    uploaded_slots: list[dict]
+    missed_slots: list[dict]
+    recovered: list[dict]
+    errors: list[dict]

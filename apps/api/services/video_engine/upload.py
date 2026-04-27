@@ -45,14 +45,20 @@ def upload_to_youtube(
     publish_at: str | None,
     slot: str,
     thumbnail_path: str | None = None,
+    auto_comment: bool = True,
+    content_type: str = "",
+    company_name: str = "",
+    foreign_net: int = 0,
 ) -> str:
-    """Upload video to YouTube, set thumbnail, add to playlist. Returns video_id."""
+    """Upload video to YouTube, set thumbnail, add to playlist, and auto-comment. Returns video_id."""
     from apps.api.routers.youtube_upload import (
         _build_youtube_client,
         _upload_video,
         _set_thumbnail,
         _ensure_playlists,
         _add_to_playlist,
+        _post_pinned_comment,
+        _get_comment_text,
     )
 
     youtube = _build_youtube_client()
@@ -82,5 +88,10 @@ def upload_to_youtube(
                 _add_to_playlist(youtube, video_id, pid)
         except Exception:
             logger.exception("Playlist add failed -- continuing")
+
+    # Auto-comment (channel owner comment appears highlighted at top)
+    if auto_comment:
+        comment_text = _get_comment_text(content_type, company_name, foreign_net)
+        _post_pinned_comment(youtube, video_id, comment_text)
 
     return video_id

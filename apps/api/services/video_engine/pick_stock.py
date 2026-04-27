@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.request
 from datetime import date as _date, timedelta as _td
 
@@ -11,6 +12,9 @@ from domain.calendar.planner import _generate_title
 from apps.api.services.video_engine.models import ChipSummary, PickStockResponse
 
 logger = logging.getLogger(__name__)
+
+_API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
+_API_KEY = os.environ.get("JARVIS_KEY", "")
 
 # ── Slot configuration ───────────────────────────────────────────────────────
 # Slot -> (scoring_key, title_template, reason_template)
@@ -75,10 +79,13 @@ def score_symbols_with_fallback(
         for sym in symbols:
             end = target_str
             start = (target - _td(days=15)).isoformat()
-            url = f"http://localhost:8000/api/chip/{sym}/range?start={start}&end={end}"
+            url = f"{_API_BASE}/api/chip/{sym}/range?start={start}&end={end}"
             try:
+                _h = {"Accept": "application/json"}
+                if _API_KEY:
+                    _h["X-API-Key"] = _API_KEY
                 with urllib.request.urlopen(
-                    urllib.request.Request(url, headers={"Accept": "application/json"}),
+                    urllib.request.Request(url, headers=_h),
                     timeout=15,
                 ) as resp:
                     chip = json.loads(resp.read())

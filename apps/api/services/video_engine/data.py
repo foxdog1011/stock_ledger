@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.request
 from datetime import date, timedelta
 
@@ -12,15 +13,26 @@ from apps.api.services.video_engine.constants import TICKER_NAME
 
 logger = logging.getLogger(__name__)
 
+_API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
+_API_KEY = os.environ.get("JARVIS_KEY", "")
+
+
+def _api_headers() -> dict:
+    """Build headers for internal API calls, including API key if set."""
+    h = {"Accept": "application/json"}
+    if _API_KEY:
+        h["X-API-Key"] = _API_KEY
+    return h
+
 
 def get_chip_data(symbol: str, days: int) -> dict:
     """Fetch chip data from the local API for a given symbol and time range."""
     end   = date.today().isoformat()
     start = (date.today() - timedelta(days=days + 10)).isoformat()
-    url   = f"http://localhost:8000/api/chip/{symbol}/range?start={start}&end={end}"
+    url   = f"{_API_BASE}/api/chip/{symbol}/range?start={start}&end={end}"
     try:
         with urllib.request.urlopen(
-            urllib.request.Request(url, headers={"Accept": "application/json"}),
+            urllib.request.Request(url, headers=_api_headers()),
             timeout=20,
         ) as resp:
             data = json.loads(resp.read())
@@ -36,10 +48,10 @@ def get_chip_data(symbol: str, days: int) -> dict:
 
 def get_company_name(symbol: str) -> str:
     """Look up company name via research API, fall back to built-in ticker map."""
-    url = f"http://localhost:8000/api/research/{symbol}"
+    url = f"{_API_BASE}/api/research/{symbol}"
     try:
         with urllib.request.urlopen(
-            urllib.request.Request(url, headers={"Accept": "application/json"}),
+            urllib.request.Request(url, headers=_api_headers()),
             timeout=10,
         ) as resp:
             name = json.loads(resp.read()).get("name", "")

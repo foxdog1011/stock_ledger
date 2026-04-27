@@ -14,6 +14,11 @@ SLIDE_SECONDS: dict[str, int] = {
 
 # Shorts (vertical)
 SHORTS_W, SHORTS_H = 1080, 1920
+SHORTS_SLIDE_SECONDS: dict[str, int] = {
+    "title": 4,
+    "chart": 8,
+    "summary": 6,
+}
 
 # Thumbnail
 THUMB_W, THUMB_H = 1280, 720

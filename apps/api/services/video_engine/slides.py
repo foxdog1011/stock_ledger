@@ -94,15 +94,25 @@ def make_foreign_chart(daily: list[dict]) -> np.ndarray:
     fig, ax = plt.subplots(figsize=(19.2, 10.8), facecolor=BG)
     ax.set_facecolor(BG)
 
-    bars = ax.bar(dates, nets, color=colors, width=0.55, edgecolor="none", zorder=3)
+    bars = ax.bar(dates, nets, color=colors, width=0.55,
+                  edgecolor=TEXT, linewidth=1.5, zorder=3)
+
+    # Add shadow bars behind for depth
+    shadow_offset = 0.04
+    ax.bar([i + shadow_offset for i in range(len(dates))], nets,
+           color="#000000", width=0.55, alpha=0.2, zorder=2)
 
     for bar, val in zip(bars, nets):
         offset = max(abs(val) * 0.06, 30)
         va = "bottom" if val >= 0 else "top"
         y  = val + offset if val >= 0 else val - offset
+        # Directional arrow next to value
+        arrow = "↑" if val >= 0 else "↓"
         ax.text(bar.get_x() + bar.get_width() / 2, y,
-                f"{val:+,}", ha="center", va=va,
-                fontsize=20, color=TEXT, fontweight="bold")
+                f"{arrow} {val:+,}", ha="center", va=va,
+                fontsize=22, color=TEXT, fontweight="bold",
+                bbox={"boxstyle": "round,pad=0.15", "facecolor": BG,
+                      "edgecolor": "none", "alpha": 0.6})
 
     ax.axhline(0, color=MUTED, lw=1.5, alpha=0.5, zorder=2)
     ax.set_title("外資近週買賣超（張）", fontproperties=fp(40), color=TEXT, pad=18)
@@ -319,6 +329,13 @@ def make_thumbnail(
     def _rcenter(text_w: int) -> int:
         return rx_start + max(0, (right_w - text_w) // 2)
 
+    # Big directional arrow (visual anchor)
+    arrow_str = "▲" if is_buy else "▼"
+    font_arrow = pil_font(80)
+    abbox = draw.textbbox((0, 0), arrow_str, font=font_arrow)
+    aw = abbox[2] - abbox[0]
+    draw.text((_rcenter(aw), ry_center - 280), arrow_str, font=font_arrow, fill=val_color)
+
     # Label pill
     font_label = pil_font(52)
     lbbox = draw.textbbox((0, 0), label, font=font_label)
@@ -326,7 +343,7 @@ def make_thumbnail(
     l_pad_x, l_pad_y = 28, 12
     pill_w = lw + l_pad_x * 2
     lx = _rcenter(pill_w)
-    pill_top = ry_center - 215
+    pill_top = ry_center - 175
     _draw_rounded_rect(draw, (lx, pill_top, lx + pill_w, pill_top + lh + l_pad_y * 2),
                        22, val_color)
     draw.text((lx + l_pad_x - lbbox[0], pill_top + l_pad_y - lbbox[1]),
@@ -340,24 +357,225 @@ def make_thumbnail(
         if nw <= right_w - 20:
             break
     nx = _rcenter(nw)
-    draw.text((nx, ry_center - 130), num_str, font=font_number, fill=val_color)
+    draw.text((nx, ry_center - 80), num_str, font=font_number, fill=val_color)
 
     # Unit
     font_unit = pil_font(56)
     ubbox = draw.textbbox((0, 0), unit_str, font=font_unit)
     uw = ubbox[2] - ubbox[0]
-    draw.text((_rcenter(uw), ry_center + 110), unit_str, font=font_unit, fill=hex_to_rgb(MUTED))
+    draw.text((_rcenter(uw), ry_center + 140), unit_str, font=font_unit, fill=hex_to_rgb(MUTED))
 
-    # Suggested title at bottom
-    font_title = pil_font(32)
-    title_hint = f"{symbol} {company_name} 本週三大法人籌碼分析"
-    tbbox = draw.textbbox((0, 0), title_hint, font=font_title)
-    tw = tbbox[2] - tbbox[0]
-    draw.text((_rcenter(tw), THUMB_H - 72), title_hint, font=font_title, fill=hex_to_rgb(MUTED))
+    # Bottom accent bar (colored by buy/sell)
+    draw.rectangle([THUMB_W // 2 + 20, THUMB_H - 12, THUMB_W - 20, THUMB_H],
+                   fill=val_color)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+# ── Weekly review slides ────────────────────────────────────────────────────
+
+
+def make_weekly_review_title_slide(
+    symbols_info: list[dict],
+    date_range: str,
+) -> np.ndarray:
+    """Title slide for weekly recap video (1920x1080 landscape).
+
+    *symbols_info* items should have keys ``symbol`` and ``name``.
+    """
+    fig = plt.figure(figsize=(19.2, 10.8), facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+    ax.axis("off")
+
+    ax.axhline(0.86, xmin=0.08, xmax=0.92, color=ACCENT, lw=3)
+    ax.axhline(0.14, xmin=0.08, xmax=0.92, color=ACCENT, lw=2, alpha=0.4)
+
+    ax.text(0.5, 0.93, "JARVIS 選股", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(26), fontweight="bold")
+    ax.text(0.5, 0.73, "本週精選回顧", transform=ax.transAxes,
+            ha="center", va="center", color=TEXT, fontproperties=fp(62), fontweight="bold")
+    ax.text(0.5, 0.57, date_range, transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(30))
+
+    names = [f"{s['symbol']} {s['name']}" for s in symbols_info[:5]]
+    badge_str = "　".join(names)
+    ax.text(0.5, 0.42, badge_str, transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(22), alpha=0.9)
+
+    ax.text(0.5, 0.25, "三大法人週報 完整分析", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(26))
+    ax.text(0.5, 0.07, "訂閱 JARVIS 選股｜每天更新",
+            transform=ax.transAxes, ha="center", va="center",
+            color=ACCENT, alpha=0.8, fontproperties=fp(22))
+
+    plt.tight_layout(pad=0)
+    arr = _fig_to_array(fig)
+    plt.close(fig)
+    return arr
+
+
+def make_stock_summary_slide(
+    symbol: str,
+    company_name: str,
+    foreign_net_data: list[dict],
+    daily: list[dict],
+) -> np.ndarray:
+    """Compact per-stock slide for weekly recap (1920x1080 landscape).
+
+    Shows stock name, a 5-day foreign net bar chart, and total foreign net.
+
+    Parameters
+    ----------
+    symbol : str
+        Ticker, e.g. ``"2330"``.
+    company_name : str
+        Chinese company name, e.g. ``"台積電"``.
+    foreign_net_data : list[dict]
+        Raw daily chip dicts (must contain ``date`` and ``foreign.net``).
+    daily : list[dict]
+        Same as *foreign_net_data* (kept for interface consistency).
+    """
+    recent = foreign_net_data[-5:] if len(foreign_net_data) >= 5 else foreign_net_data
+    dates_short = [d["date"][-5:] for d in recent]
+    vals = [round(d.get("foreign", {}).get("net", 0) / 1000) for d in recent]
+    total_foreign = sum(vals)
+    colors = [GREEN if v >= 0 else RED for v in vals]
+
+    fig = plt.figure(figsize=(19.2, 10.8), facecolor=BG)
+
+    # ── Top header area (using main axes) ──
+    ax_header = fig.add_axes([0.0, 0.78, 1.0, 0.20], facecolor=BG)
+    ax_header.axis("off")
+
+    ax_header.text(0.5, 0.85, "JARVIS 選股", transform=ax_header.transAxes,
+                   ha="center", va="center", color=ACCENT, fontproperties=fp(22))
+    ax_header.axhline(0.65, xmin=0.08, xmax=0.92, color=ACCENT, lw=2)
+    ax_header.text(0.5, 0.35, f"{company_name}（{symbol}）",
+                   transform=ax_header.transAxes,
+                   ha="center", va="center", color=TEXT,
+                   fontproperties=fp(52), fontweight="bold")
+
+    # ── Bar chart area ──
+    ax_bar = fig.add_axes([0.10, 0.18, 0.55, 0.55], facecolor=CARD_BG)
+
+    bars = ax_bar.bar(dates_short, vals, color=colors, width=0.55,
+                      edgecolor=TEXT, linewidth=1.5, zorder=3)
+    ax_bar.axhline(0, color=MUTED, lw=1.5, alpha=0.5, zorder=2)
+
+    for bar, val in zip(bars, vals):
+        offset = max(abs(val) * 0.08, 20)
+        va_pos = "bottom" if val >= 0 else "top"
+        y = val + offset if val >= 0 else val - offset
+        arrow = "↑" if val >= 0 else "↓"
+        ax_bar.text(bar.get_x() + bar.get_width() / 2, y,
+                    f"{arrow} {val:+,}", ha="center", va=va_pos,
+                    fontsize=20, color=TEXT, fontweight="bold",
+                    bbox={"boxstyle": "round,pad=0.12", "facecolor": CARD_BG,
+                          "edgecolor": "none", "alpha": 0.7})
+
+    ax_bar.set_title("外資近 5 日買賣超（張）", fontproperties=fp(28), color=TEXT, pad=14)
+    ax_bar.tick_params(colors=TEXT, labelsize=18)
+    for sp in ax_bar.spines.values():
+        sp.set_edgecolor(GRID)
+    ax_bar.grid(axis="y", color=GRID, lw=1, zorder=1)
+
+    # ── Right-side total metric card ──
+    ax_metric = fig.add_axes([0.70, 0.22, 0.26, 0.48], facecolor=BG)
+    ax_metric.axis("off")
+
+    is_buy = total_foreign >= 0
+    val_color = GREEN if is_buy else RED
+    arrow_str = "▲" if is_buy else "▼"
+    label = "外資買超" if is_buy else "外資賣超"
+    sign = "+" if is_buy else ""
+
+    rect = plt.Rectangle(
+        (0.0, 0.0), 1.0, 1.0,
+        transform=ax_metric.transAxes, clip_on=False,
+        facecolor=CARD_BG, edgecolor=val_color, linewidth=3,
+    )
+    ax_metric.add_patch(rect)
+
+    ax_metric.text(0.5, 0.85, label, transform=ax_metric.transAxes,
+                   ha="center", va="center", color=val_color,
+                   fontproperties=fp(28), fontweight="bold")
+    ax_metric.text(0.5, 0.60, arrow_str, transform=ax_metric.transAxes,
+                   ha="center", va="center", color=val_color,
+                   fontproperties=fp(64), fontweight="bold", alpha=0.8)
+    ax_metric.text(0.5, 0.35, f"{sign}{total_foreign:,}", transform=ax_metric.transAxes,
+                   ha="center", va="center", color=val_color,
+                   fontproperties=fp(48), fontweight="bold")
+    ax_metric.text(0.5, 0.15, "張（5日合計）", transform=ax_metric.transAxes,
+                   ha="center", va="center", color=MUTED, fontproperties=fp(20))
+
+    # ── Footer ──
+    fig.text(0.5, 0.06, "以上資訊僅供參考，不構成任何投資建議",
+             ha="center", va="center", color=MUTED, fontproperties=fp(18))
+
+    arr = _fig_to_array(fig)
+    plt.close(fig)
+    return arr
+
+
+def make_weekly_review_summary_slide(
+    symbols_summaries: list[dict],
+    date_range: str,
+) -> np.ndarray:
+    """Final summary slide for weekly recap (1920x1080 landscape).
+
+    *symbols_summaries* items should have ``symbol``, ``name``, and ``foreign_net_k``.
+    """
+    fig = plt.figure(figsize=(19.2, 10.8), facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+    ax.axis("off")
+
+    ax.axhline(0.88, xmin=0.06, xmax=0.94, color=ACCENT, lw=2.5)
+    ax.text(0.5, 0.94, f"本週精選總結  {date_range}", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(36))
+
+    n = min(len(symbols_summaries), 5)
+    xs = [0.5] if n == 1 else [round(0.12 + i * (0.76 / (n - 1)), 2) for i in range(n)]
+
+    for i, ss in enumerate(symbols_summaries[:n]):
+        cx = xs[i]
+        val = ss.get("foreign_net_k", 0)
+        val_color = GREEN if val >= 0 else RED
+        sign = "+" if val >= 0 else ""
+        trend_txt = "▲ 買超" if val >= 0 else "▼ 賣超"
+
+        card_w = min(0.16, 0.7 / n)
+        rect = plt.Rectangle(
+            (cx - card_w / 2, 0.30), card_w, 0.48,
+            transform=ax.transAxes, clip_on=False,
+            facecolor=CARD_BG, edgecolor=ACCENT, linewidth=2,
+        )
+        ax.add_patch(rect)
+
+        ax.text(cx, 0.70, ss.get("name", ss["symbol"]), transform=ax.transAxes,
+                ha="center", va="center", color=TEXT, fontproperties=fp(26), fontweight="bold")
+        ax.text(cx, 0.62, ss["symbol"], transform=ax.transAxes,
+                ha="center", va="center", color=MUTED, fontproperties=fp(18))
+        ax.text(cx, 0.50, f"{sign}{val:,} 張", transform=ax.transAxes,
+                ha="center", va="center", color=val_color, fontproperties=fp(24))
+        ax.text(cx, 0.38, trend_txt, transform=ax.transAxes,
+                ha="center", va="center", color=val_color, fontproperties=fp(20))
+
+    ax.axhline(0.24, xmin=0.06, xmax=0.94, color=GRID, lw=1.5)
+    ax.text(0.5, 0.16, "以上資訊僅供參考，不構成任何投資建議，請自行評估風險。",
+            transform=ax.transAxes, ha="center", va="center",
+            color=MUTED, fontproperties=fp(20))
+    ax.text(0.5, 0.08, "按讚 + 訂閱 JARVIS 選股，每週一掌握三大法人動向！",
+            transform=ax.transAxes, ha="center", va="center",
+            color=ACCENT, fontproperties=fp(22))
+
+    plt.tight_layout(pad=0)
+    arr = _fig_to_array(fig)
+    plt.close(fig)
+    return arr
 
 
 # ── Sector slides ────────────────────────────────────────────────────────────
@@ -442,32 +660,64 @@ def make_shorts_slide(
     daily: list[dict],
     compute_foreign_net_k_fn: "callable",
 ) -> np.ndarray:
-    """Single vertical slide for YouTube Shorts (1080x1920) -- key metrics only."""
+    """Single vertical slide for YouTube Shorts (1080x1920) — high-impact layout.
+
+    Visual hierarchy: dramatic headline → big arrow + number → 3-metric row → bar chart.
+    """
     fig = plt.figure(figsize=(10.8, 19.2), facecolor=BG)
     ax = fig.add_subplot(111)
     ax.set_facecolor(BG)
     ax.axis("off")
 
-    # Header
-    ax.text(0.5, 0.98, "JARVIS 選股", transform=ax.transAxes,
-            ha="center", va="center", color=ACCENT, fontproperties=fp(26), fontweight="bold")
-    ax.axhline(0.955, xmin=0.05, xmax=0.95, color=ACCENT, lw=3)
-    if symbol == company_name or not symbol.isdigit():
-        header_text = f"{company_name} 三大法人週報"
-    else:
-        header_text = f"{company_name}（{symbol}）三大法人週報"
-    ax.text(0.5, 0.925, header_text,
-            transform=ax.transAxes, ha="center", va="center",
-            color=TEXT, fontproperties=fp(40), fontweight="bold")
-    ax.text(0.5, 0.89, date_range, transform=ax.transAxes,
-            ha="center", va="center", color=MUTED, fontproperties=fp(26))
-
-    # Foreign net big number
+    # ── Compute derived data from daily ──
     foreign_k = compute_foreign_net_k_fn(summary, daily)
     is_buy = foreign_k >= 0
     val_color = GREEN if is_buy else RED
-    label = "外資買超" if is_buy else "外資賣超"
     abs_k = abs(foreign_k)
+
+    # Consecutive buy/sell streak
+    consec = 0
+    for d in reversed(daily):
+        fn = d.get("foreign", {}).get("net", 0)
+        if (is_buy and fn > 0) or (not is_buy and fn < 0):
+            consec += 1
+        else:
+            break
+
+    # Trust & dealer totals
+    trust_k = round(sum(d.get("investment_trust", {}).get("net", 0) for d in daily) / 1000)
+    dealer_k = round(sum(d.get("dealer", {}).get("net", 0) for d in daily) / 1000)
+
+    # ── Header: channel badge ──
+    ax.text(0.5, 0.98, "JARVIS 選股", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(24), fontweight="bold")
+    ax.axhline(0.962, xmin=0.05, xmax=0.95, color=ACCENT, lw=3)
+
+    # ── Dynamic headline (not boring "三大法人週報") ──
+    if symbol == company_name or not symbol.isdigit():
+        name_str = company_name
+    else:
+        name_str = f"{company_name}（{symbol}）"
+
+    if consec >= 3:
+        action = "買" if is_buy else "賣"
+        headline = f"外資連{consec}天{action}！"
+    elif abs_k >= 5000:
+        headline = "外資狂掃！" if is_buy else "外資大撤退！"
+    else:
+        headline = "外資買超" if is_buy else "外資賣超"
+
+    ax.text(0.5, 0.935, name_str,
+            transform=ax.transAxes, ha="center", va="center",
+            color=TEXT, fontproperties=fp(44), fontweight="bold")
+    ax.text(0.5, 0.895, headline,
+            transform=ax.transAxes, ha="center", va="center",
+            color=val_color, fontproperties=fp(38), fontweight="bold")
+    ax.text(0.5, 0.865, date_range, transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(22))
+
+    # ── Hero number with big arrow ──
+    arrow = "▲" if is_buy else "▼"
     if abs_k >= 10000:
         num_str = f"{abs_k / 10000:.1f}".rstrip("0").rstrip(".")
         unit_str = "萬張"
@@ -475,46 +725,426 @@ def make_shorts_slide(
         num_str = f"{abs_k:,}"
         unit_str = "張"
 
-    ax.text(0.5, 0.82, label, transform=ax.transAxes,
-            ha="center", va="center", color=val_color, fontproperties=fp(48), fontweight="bold")
-    ax.text(0.5, 0.74, num_str, transform=ax.transAxes,
-            ha="center", va="center", color=val_color, fontproperties=fp(88), fontweight="bold")
-    ax.text(0.5, 0.69, unit_str, transform=ax.transAxes,
-            ha="center", va="center", color=MUTED, fontproperties=fp(32))
+    # Trend indicator (secondary arrow showing momentum direction)
+    if len(daily) >= 2:
+        last_fn = daily[-1].get("foreign", {}).get("net", 0)
+        prev_fn = daily[-2].get("foreign", {}).get("net", 0)
+        if last_fn > prev_fn:
+            trend_arrow = "↗"
+        elif last_fn < prev_fn:
+            trend_arrow = "↘"
+        else:
+            trend_arrow = "→"
+    else:
+        trend_arrow = ""
 
-    # Daily bar mini chart
+    # Giant arrow with glow effect (larger faded arrow behind)
+    ax.text(0.5, 0.79, arrow, transform=ax.transAxes,
+            ha="center", va="center", color=val_color, fontproperties=fp(90),
+            fontweight="bold", alpha=0.15)
+    ax.text(0.5, 0.79, arrow, transform=ax.transAxes,
+            ha="center", va="center", color=val_color, fontproperties=fp(72),
+            fontweight="bold", alpha=0.85)
+    # Big number
+    ax.text(0.5, 0.715, num_str, transform=ax.transAxes,
+            ha="center", va="center", color=val_color, fontproperties=fp(96), fontweight="bold")
+    # Unit with trend arrow
+    trend_label = f"{unit_str}  {trend_arrow}" if trend_arrow else unit_str
+    ax.text(0.5, 0.665, trend_label, transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(30))
+
+    # ── 3-metric summary row (外資 / 投信 / 自營) ──
+    metrics = [
+        ("外資", foreign_k, ACCENT),
+        ("投信", trust_k, GREEN),
+        ("自營", dealer_k, BLUE),
+    ]
+    for i, (label, val, base_color) in enumerate(metrics):
+        cx = 0.18 + i * 0.32
+        m_color = GREEN if val >= 0 else RED
+        sign = "+" if val >= 0 else ""
+        m_arrow = "▲" if val >= 0 else "▼"
+
+        # Card background
+        rect = plt.Rectangle(
+            (cx - 0.12, 0.575), 0.24, 0.07,
+            transform=ax.transAxes, clip_on=False,
+            facecolor=CARD_BG, edgecolor=base_color, linewidth=2, alpha=0.9,
+        )
+        ax.add_patch(rect)
+
+        ax.text(cx, 0.63, label, transform=ax.transAxes,
+                ha="center", va="center", color=base_color, fontproperties=fp(20))
+        ax.text(cx, 0.595, f"{m_arrow}{sign}{val:,}", transform=ax.transAxes,
+                ha="center", va="center", color=m_color, fontproperties=fp(22), fontweight="bold")
+
+    # ── Streak badge (if consecutive >= 2) ──
+    if consec >= 2:
+        action = "連買" if is_buy else "連賣"
+        badge_text = f"🔥 {action} {consec} 天"
+        badge_color = val_color
+        rect_badge = plt.Rectangle(
+            (0.28, 0.535), 0.44, 0.03,
+            transform=ax.transAxes, clip_on=False,
+            facecolor=badge_color, edgecolor="none", alpha=0.2,
+        )
+        ax.add_patch(rect_badge)
+        ax.text(0.5, 0.55, badge_text, transform=ax.transAxes,
+                ha="center", va="center", color=badge_color, fontproperties=fp(22), fontweight="bold")
+
+    # ── Daily bar chart ──
     recent = daily[-5:] if len(daily) >= 5 else daily
     dates_short = [d["date"][-5:] for d in recent]
     vals = [round(d.get("foreign", {}).get("net", 0) / 1000) for d in recent]
     colors = [GREEN if v >= 0 else RED for v in vals]
 
-    ax_bar = fig.add_axes([0.12, 0.18, 0.76, 0.33], facecolor=CARD_BG)
-    ax_bar.bar(dates_short, vals, color=colors, width=0.45)
-    ax_bar.axhline(0, color=GRID, lw=1)
+    chart_bottom = 0.14
+    ax_bar = fig.add_axes([0.12, chart_bottom, 0.76, 0.36], facecolor=CARD_BG)
+
+    # Shadow bars for depth effect
+    shadow_offset = 0.03
+    ax_bar.bar([i + shadow_offset for i in range(len(dates_short))], vals,
+               color="#000000", width=0.5, alpha=0.2, zorder=2)
+
+    bars = ax_bar.bar(dates_short, vals, color=colors, width=0.5,
+                      edgecolor=TEXT, linewidth=1.5, zorder=3)
+    ax_bar.axhline(0, color=GRID, lw=1.5, zorder=2)
     ax_bar.set_facecolor(CARD_BG)
     ax_bar.tick_params(axis="x", colors=MUTED, labelsize=22)
     ax_bar.tick_params(axis="y", colors=MUTED, labelsize=16)
     ax_bar.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:,.0f}"))
-    ax_bar.set_title("近期外資買賣超（張）", fontproperties=fp(24), color=MUTED, pad=16)
+    ax_bar.set_title("外資近期買賣超（張）", fontproperties=fp(24), color=MUTED, pad=16)
     for spine in ax_bar.spines.values():
         spine.set_edgecolor(GRID)
     max_abs_val = max((abs(x) for x in vals), default=1)
     y_min, y_max = ax_bar.get_ylim()
-    y_margin = (y_max - y_min) * 0.12
+    y_margin = (y_max - y_min) * 0.18
     ax_bar.set_ylim(y_min - y_margin, y_max + y_margin)
     for i, v in enumerate(vals):
         if v != 0:
-            offset = max_abs_val * 0.04 * (1 if v >= 0 else -1)
+            offset = max_abs_val * 0.06 * (1 if v >= 0 else -1)
+            arrow = "↑" if v >= 0 else "↓"
             ax_bar.text(i, v + offset,
-                        f"{v:,}", ha="center", va="bottom" if v >= 0 else "top",
-                        color=TEXT, fontproperties=fp(14), clip_on=True)
+                        f"{arrow}{v:+,}", ha="center", va="bottom" if v >= 0 else "top",
+                        color=TEXT, fontproperties=fp(18), fontweight="bold", clip_on=True,
+                        bbox={"boxstyle": "round,pad=0.12", "facecolor": CARD_BG,
+                              "edgecolor": "none", "alpha": 0.7})
 
-    # Footer CTA
-    fig.text(0.5, 0.06, "━" * 30, ha="center", va="center",
+    # ── Footer CTA ──
+    fig.text(0.5, 0.05, "━" * 30, ha="center", va="center",
              color=ACCENT, fontsize=14, alpha=0.4)
-    fig.text(0.5, 0.035, "訂閱 JARVIS 選股｜每天更新",
+    fig.text(0.5, 0.03, "按讚＋訂閱 JARVIS 選股｜每天更新",
              ha="center", va="center", color=ACCENT,
-             fontproperties=fp(28), alpha=0.9)
+             fontproperties=fp(26), alpha=0.9)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100,
+                facecolor=fig.get_facecolor(), edgecolor="none")
+    buf.seek(0)
+    img = Image.open(buf).convert("RGB").resize((SHORTS_W, SHORTS_H), Image.LANCZOS)
+    plt.close(fig)
+    return np.array(img)
+
+
+# ── TDCC Shorts slide (1080x1920 vertical) ────────────────────────────────
+
+def make_tdcc_shorts_slide(
+    company_name: str,
+    big_holder_change: float,
+    retail_change: float,
+    big_holder_pct: float,
+    retail_pct: float,
+) -> np.ndarray:
+    """Vertical slide for TDCC (集保戶數) YouTube Shorts (1080x1920).
+
+    Layout: header -> hero big-holder change -> retail change -> bar -> footer.
+    """
+    fig = plt.figure(figsize=(10.8, 19.2), facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+    ax.axis("off")
+
+    # ── Header ──
+    ax.text(0.5, 0.98, "JARVIS 選股", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(24), fontweight="bold")
+    ax.axhline(0.962, xmin=0.05, xmax=0.95, color=ACCENT, lw=3)
+    ax.text(0.5, 0.935, company_name, transform=ax.transAxes,
+            ha="center", va="center", color=TEXT, fontproperties=fp(44), fontweight="bold")
+    ax.text(0.5, 0.895, "集保戶數變動分析", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(28))
+
+    # ── Hero: 大戶持股 change ──
+    big_arrow = "▲" if big_holder_change >= 0 else "▼"
+    big_color = GREEN if big_holder_change >= 0 else RED
+    ax.text(0.5, 0.82, "大戶持股", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(32))
+    ax.text(0.5, 0.73, f"{big_arrow}{abs(big_holder_change):.1f}%", transform=ax.transAxes,
+            ha="center", va="center", color=big_color, fontproperties=fp(96), fontweight="bold")
+    ax.text(0.5, 0.685, "（≥400張）", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(22))
+
+    # ── Retail change ──
+    retail_arrow = "▲" if retail_change >= 0 else "▼"
+    retail_color = RED if retail_change >= 0 else GREEN  # retail increase = bearish
+    ax.text(0.5, 0.62, "散戶持股", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(32))
+    ax.text(0.5, 0.55, f"{retail_arrow}{abs(retail_change):.1f}%", transform=ax.transAxes,
+            ha="center", va="center", color=retail_color, fontproperties=fp(72), fontweight="bold")
+    ax.text(0.5, 0.515, "（≤10張）", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(22))
+
+    # ── Horizontal proportion bar (大戶 vs 散戶) ──
+    bar_y = 0.42
+    bar_h = 0.04
+    bar_left = 0.1
+    bar_width = 0.8
+    total_pct = big_holder_pct + retail_pct
+    if total_pct > 0:
+        big_ratio = big_holder_pct / total_pct
+    else:
+        big_ratio = 0.5
+
+    # Big holder portion (green)
+    rect_big = plt.Rectangle(
+        (bar_left, bar_y), bar_width * big_ratio, bar_h,
+        transform=ax.transAxes, clip_on=False,
+        facecolor=GREEN, edgecolor="none", alpha=0.85,
+    )
+    ax.add_patch(rect_big)
+    # Retail portion (red)
+    rect_retail = plt.Rectangle(
+        (bar_left + bar_width * big_ratio, bar_y), bar_width * (1 - big_ratio), bar_h,
+        transform=ax.transAxes, clip_on=False,
+        facecolor=RED, edgecolor="none", alpha=0.85,
+    )
+    ax.add_patch(rect_retail)
+
+    # Labels on bar
+    ax.text(bar_left + bar_width * big_ratio * 0.5, bar_y - 0.025,
+            f"大戶 {big_holder_pct:.1f}%", transform=ax.transAxes,
+            ha="center", va="center", color=GREEN, fontproperties=fp(20), fontweight="bold")
+    ax.text(bar_left + bar_width * big_ratio + bar_width * (1 - big_ratio) * 0.5, bar_y - 0.025,
+            f"散戶 {retail_pct:.1f}%", transform=ax.transAxes,
+            ha="center", va="center", color=RED, fontproperties=fp(20), fontweight="bold")
+
+    # ── Interpretation text ──
+    if big_holder_change > 0:
+        interp = "大戶加碼中，籌碼趨於集中"
+        interp_color = GREEN
+    elif big_holder_change < 0:
+        interp = "大戶減碼中，籌碼趨於分散"
+        interp_color = RED
+    else:
+        interp = "籌碼結構持平"
+        interp_color = MUTED
+    ax.text(0.5, 0.34, interp, transform=ax.transAxes,
+            ha="center", va="center", color=interp_color, fontproperties=fp(28), fontweight="bold")
+
+    # ── Footer CTA ──
+    fig.text(0.5, 0.05, "━" * 30, ha="center", va="center",
+             color=ACCENT, fontsize=14, alpha=0.4)
+    fig.text(0.5, 0.03, "按讚＋訂閱 JARVIS 選股｜每天更新",
+             ha="center", va="center", color=ACCENT,
+             fontproperties=fp(26), alpha=0.9)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100,
+                facecolor=fig.get_facecolor(), edgecolor="none")
+    buf.seek(0)
+    img = Image.open(buf).convert("RGB").resize((SHORTS_W, SHORTS_H), Image.LANCZOS)
+    plt.close(fig)
+    return np.array(img)
+
+
+# ── Rotation Shorts slide (1080x1920 vertical) ────────────────────────────
+
+def make_rotation_shorts_slide(
+    sell_name: str,
+    sell_lots: int,
+    buy_name: str,
+    buy_lots: int,
+) -> np.ndarray:
+    """Vertical slide for institutional rotation (法人換股) YouTube Shorts (1080x1920).
+
+    Layout: header -> two columns (sell | arrow | buy) -> footer.
+    """
+    fig = plt.figure(figsize=(10.8, 19.2), facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+    ax.axis("off")
+
+    # ── Header ──
+    ax.text(0.5, 0.98, "JARVIS 選股", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(24), fontweight="bold")
+    ax.axhline(0.962, xmin=0.05, xmax=0.95, color=ACCENT, lw=3)
+    ax.text(0.5, 0.935, "外資換股追蹤", transform=ax.transAxes,
+            ha="center", va="center", color=TEXT, fontproperties=fp(44), fontweight="bold")
+
+    # ── Left column: 減碼 (sell) ──
+    left_cx = 0.25
+    # Card background
+    rect_sell = plt.Rectangle(
+        (left_cx - 0.18, 0.55), 0.36, 0.32,
+        transform=ax.transAxes, clip_on=False,
+        facecolor=CARD_BG, edgecolor=RED, linewidth=3, alpha=0.9,
+    )
+    ax.add_patch(rect_sell)
+
+    ax.text(left_cx, 0.83, "▼", transform=ax.transAxes,
+            ha="center", va="center", color=RED, fontproperties=fp(60), fontweight="bold")
+    ax.text(left_cx, 0.76, "減碼", transform=ax.transAxes,
+            ha="center", va="center", color=RED, fontproperties=fp(32), fontweight="bold")
+    ax.text(left_cx, 0.69, sell_name, transform=ax.transAxes,
+            ha="center", va="center", color=TEXT, fontproperties=fp(40), fontweight="bold")
+    sell_lots_str = f"{abs(sell_lots):,} 張"
+    ax.text(left_cx, 0.61, sell_lots_str, transform=ax.transAxes,
+            ha="center", va="center", color=RED, fontproperties=fp(28))
+
+    # ── Center arrow ──
+    ax.text(0.5, 0.71, "→", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(72), fontweight="bold")
+
+    # ── Right column: 加碼 (buy) ──
+    right_cx = 0.75
+    rect_buy = plt.Rectangle(
+        (right_cx - 0.18, 0.55), 0.36, 0.32,
+        transform=ax.transAxes, clip_on=False,
+        facecolor=CARD_BG, edgecolor=GREEN, linewidth=3, alpha=0.9,
+    )
+    ax.add_patch(rect_buy)
+
+    ax.text(right_cx, 0.83, "▲", transform=ax.transAxes,
+            ha="center", va="center", color=GREEN, fontproperties=fp(60), fontweight="bold")
+    ax.text(right_cx, 0.76, "加碼", transform=ax.transAxes,
+            ha="center", va="center", color=GREEN, fontproperties=fp(32), fontweight="bold")
+    ax.text(right_cx, 0.69, buy_name, transform=ax.transAxes,
+            ha="center", va="center", color=TEXT, fontproperties=fp(40), fontweight="bold")
+    buy_lots_str = f"{abs(buy_lots):,} 張"
+    ax.text(right_cx, 0.61, buy_lots_str, transform=ax.transAxes,
+            ha="center", va="center", color=GREEN, fontproperties=fp(28))
+
+    # ── Subtitle ──
+    ax.text(0.5, 0.48, "外資資金流向追蹤", transform=ax.transAxes,
+            ha="center", va="center", color=MUTED, fontproperties=fp(26))
+
+    # ── Disclaimer ──
+    ax.text(0.5, 0.38, "以上資訊僅供參考，不構成任何投資建議",
+            transform=ax.transAxes, ha="center", va="center",
+            color=MUTED, fontproperties=fp(20))
+
+    # ── Footer CTA ──
+    fig.text(0.5, 0.05, "━" * 30, ha="center", va="center",
+             color=ACCENT, fontsize=14, alpha=0.4)
+    fig.text(0.5, 0.03, "按讚＋訂閱 JARVIS 選股｜每天更新",
+             ha="center", va="center", color=ACCENT,
+             fontproperties=fp(26), alpha=0.9)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100,
+                facecolor=fig.get_facecolor(), edgecolor="none")
+    buf.seek(0)
+    img = Image.open(buf).convert("RGB").resize((SHORTS_W, SHORTS_H), Image.LANCZOS)
+    plt.close(fig)
+    return np.array(img)
+
+
+# ── Google Trends slide ─────────────────────────────────────────────────────
+
+
+def make_trends_shorts_slide(
+    trending_stocks: list[dict],
+) -> np.ndarray:
+    """Vertical slide for Google Trends hot stocks (1080x1920).
+
+    Each item in *trending_stocks* should have:
+        symbol, name, pct_change, foreign_net_k, signal ("contrarian"|"aligned")
+    """
+    fig = plt.figure(figsize=(10.8, 19.2), facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+    ax.axis("off")
+
+    # ── Header ──
+    ax.text(0.5, 0.98, "JARVIS 選股", transform=ax.transAxes,
+            ha="center", va="center", color=ACCENT, fontproperties=fp(24), fontweight="bold")
+    ax.axhline(0.962, xmin=0.05, xmax=0.95, color=ACCENT, lw=3)
+    ax.text(0.5, 0.935, "Google 熱搜股 vs 法人動向", transform=ax.transAxes,
+            ha="center", va="center", color=TEXT, fontproperties=fp(40), fontweight="bold")
+
+    # ── Stock rows ──
+    n = min(len(trending_stocks), 5)
+    row_h = 0.12
+    start_y = 0.85
+
+    contrarian_count = 0
+    for i, stock in enumerate(trending_stocks[:n]):
+        y = start_y - i * (row_h + 0.02)
+        signal = stock.get("signal", "aligned")
+        is_contrarian = signal == "contrarian"
+        if is_contrarian:
+            contrarian_count += 1
+        border_color = RED if is_contrarian else GREEN
+
+        # Card background
+        rect = plt.Rectangle(
+            (0.05, y - row_h / 2), 0.90, row_h,
+            transform=ax.transAxes, clip_on=False,
+            facecolor=CARD_BG, edgecolor=border_color, linewidth=2.5, alpha=0.9,
+        )
+        ax.add_patch(rect)
+
+        # Left: name + ticker
+        ax.text(0.10, y + 0.02, stock["name"], transform=ax.transAxes,
+                ha="left", va="center", color=TEXT, fontproperties=fp(32), fontweight="bold")
+        ax.text(0.10, y - 0.03, stock["symbol"], transform=ax.transAxes,
+                ha="left", va="center", color=MUTED, fontproperties=fp(20))
+
+        # Center: search volume change
+        pct = stock.get("pct_change", 0)
+        pct_text = f"+{pct:.0f}%" if pct > 0 else f"{pct:.0f}%"
+        ax.text(0.50, y, pct_text, transform=ax.transAxes,
+                ha="center", va="center", color=ACCENT, fontproperties=fp(36), fontweight="bold")
+        ax.text(0.50, y - 0.035, "搜尋量", transform=ax.transAxes,
+                ha="center", va="center", color=MUTED, fontproperties=fp(16))
+
+        # Right: foreign net
+        fnet = stock.get("foreign_net_k", 0)
+        arrow = "▲" if fnet >= 0 else "▼"
+        arrow_color = GREEN if fnet >= 0 else RED
+        ax.text(0.80, y + 0.01, f"{arrow} {abs(fnet):,} 千張", transform=ax.transAxes,
+                ha="center", va="center", color=arrow_color, fontproperties=fp(26), fontweight="bold")
+        ax.text(0.80, y - 0.03, "外資", transform=ax.transAxes,
+                ha="center", va="center", color=MUTED, fontproperties=fp(16))
+
+        # Contrarian badge
+        if is_contrarian:
+            ax.text(0.93, y + 0.03, "反向", transform=ax.transAxes,
+                    ha="center", va="center", color=RED, fontproperties=fp(16),
+                    fontweight="bold", bbox={"boxstyle": "round,pad=0.2",
+                    "facecolor": RED, "edgecolor": "none", "alpha": 0.2})
+
+    # ── Interpretation ──
+    interp_y = start_y - n * (row_h + 0.02) - 0.02
+    if contrarian_count > 0:
+        interp_text = f"{contrarian_count} 檔熱搜股遭法人反向操作"
+        interp_color = RED
+    else:
+        interp_text = "法人與散戶方向一致"
+        interp_color = GREEN
+    ax.text(0.5, interp_y, interp_text, transform=ax.transAxes,
+            ha="center", va="center", color=interp_color, fontproperties=fp(28), fontweight="bold")
+
+    # ── Disclaimer ──
+    ax.text(0.5, 0.12, "以上資訊僅供參考，不構成任何投資建議",
+            transform=ax.transAxes, ha="center", va="center",
+            color=MUTED, fontproperties=fp(20))
+
+    # ── Footer CTA ──
+    fig.text(0.5, 0.05, "━" * 30, ha="center", va="center",
+             color=ACCENT, fontsize=14, alpha=0.4)
+    fig.text(0.5, 0.03, "按讚＋訂閱 JARVIS 選股｜每天更新",
+             ha="center", va="center", color=ACCENT,
+             fontproperties=fp(26), alpha=0.9)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=100,
