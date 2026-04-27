@@ -25,17 +25,13 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ---
 
-## Quick Start
+## Live Demo
 
-Run locally with Docker in one command — see [Quick Start](#quick-start-docker) below.
+**http://35.76.187.226**
 
-To seed a sample portfolio (5 US positions + 13 months of history):
-
-```bash
-curl -X POST http://localhost:8000/api/demo/seed
-```
-
-Set `DEMO_MODE=1` in `.env` to enable read-only mode (blocks writes, safe for demos).
+> Hosted on AWS EC2 (ap-northeast-1). Data is a simulated sample portfolio.
+> To seed demo data: `POST /api/demo/seed` — 5 positions + 13 months of history.
+> Set `DEMO_MODE=1` in `.env` for read-only mode.
 
 ---
 
