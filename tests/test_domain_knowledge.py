@@ -526,9 +526,10 @@ class TestKnowledgeAPI:
         from fastapi.testclient import TestClient
         from apps.api.main import app
 
-        client = TestClient(app, raise_server_exceptions=False)
+        # Use raise_server_exceptions=True to surface the actual error
+        client = TestClient(app, raise_server_exceptions=True)
         resp = client.get("/api/knowledge")
-        assert resp.status_code == 200, f"Got {resp.status_code}: {resp.text[:500]}"
+        assert resp.status_code == 200
         data = resp.json()
         assert "total" in data
         assert "entries" in data
