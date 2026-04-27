@@ -7,7 +7,7 @@ A full-stack personal portfolio tracker and investment research platform — bui
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![Claude](https://img.shields.io/badge/Claude-claude--opus--4--6-orange)
-![Tests](https://img.shields.io/badge/tests-346-brightgreen)
+![Tests](https://img.shields.io/badge/tests-620%2B-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-93%25-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-compose-blue)
 ![AWS EC2](https://img.shields.io/badge/AWS-EC2%20ap--northeast--1-orange)
@@ -25,22 +25,17 @@ A full-stack personal portfolio tracker and investment research platform — bui
 
 ---
 
-## Live Demo
+## Quick Start
 
-**http://35.76.187.226**
+Run locally with Docker in one command — see [Quick Start](#quick-start-docker) below.
 
-> Hosted on AWS EC2 (ap-northeast-1, t2.micro). The instance may be stopped to save costs — if the page does not load, the instance is likely in a stopped state and will need to be started. Allow a minute or two for Docker services to come up after the instance starts.
->
-> Data is a simulated sample portfolio and does not represent real holdings.
->
-> Seed / reset sample data: `POST /api/demo/seed` (5 US positions + 13 months of history)
->
-> If starting fresh (e.g. after a restore or first boot), seed demo data via:
-> ```bash
-> curl -X POST http://35.76.187.226/api/demo/seed
-> ```
->
-> To run in read-only mode: set `DEMO_MODE=1` in `.env` to block all write operations.
+To seed a sample portfolio (5 US positions + 13 months of history):
+
+```bash
+curl -X POST http://localhost:8000/api/demo/seed
+```
+
+Set `DEMO_MODE=1` in `.env` to enable read-only mode (blocks writes, safe for demos).
 
 ---
 
@@ -55,7 +50,7 @@ A full-stack personal portfolio tracker and investment research platform — bui
 - **Investment research pipeline** — Universe (company DB) → Watchlist (investment thesis) → Catalyst (event tracking) → Daily Digest (auto-generated report)
 - **Multi-provider quote engine** — pluggable `PriceProvider` ABC with TWSE, FinMind, and Yahoo Finance backends; APScheduler cron at 18:00 TST; background refresh fires on every trade
 - **Tax-aware P&L** — commission and transaction tax flow into cost basis; lot-level FIFO / LIFO / HIFO breakdown; loss-offsetting simulation for tax-loss harvesting
-- **346 unit tests** across 13 test files covering domain services, API integration, and CSV import validation; **93% coverage** on domain/ and ledger/ layers (measured with pytest-cov)
+- **620+ unit tests** across 22 test files covering domain services, API integration, and CSV import validation; **93% coverage** on domain/ and ledger/ layers (measured with pytest-cov)
 
 ---
 
@@ -69,7 +64,7 @@ graph TD
     end
 
     subgraph BE["Backend — FastAPI · 40+ endpoints · APScheduler (port 8000)"]
-        API["21 routers\nAuto quote refresh @ 18:00 Asia/Taipei"]
+        API["47 routers\nAuto quote refresh @ 18:00 Asia/Taipei"]
         CHAT["POST /api/chat/stream\nagentic loop: tool_use → execute → stream"]
         ANOMALY["GET /api/anomaly/batch\nPCA autoencoder · Z-score · 6-feature time-series"]
     end
@@ -221,7 +216,7 @@ cd apps/web && API_URL=http://localhost:8000 npm run dev
 
 # 4. Run tests
 pip install -r requirements-test.txt   # includes pytest, pytest-cov, mcp, starlette pin
-python -m pytest tests/                # 346 tests
+python -m pytest tests/                # 620+ tests
 python -m pytest tests/ --cov=domain --cov=ledger  # 93% coverage
 ```
 
@@ -462,7 +457,7 @@ stock_ledger/
 │   │   ├── routers/
 │   │   │   ├── anomaly.py     #   GET /api/anomaly/batch, /api/anomaly/{symbol}
 │   │   │   ├── chat.py        #   POST /api/chat/stream — Claude agentic loop + SSE
-│   │   │   └── …              #   20 other route modules
+│   │   │   └── …              #   44 other route modules
 │   │   ├── config.py          #   Environment config
 │   │   ├── deps.py            #   FastAPI dependencies
 │   │   └── main.py            #   App factory + APScheduler lifespan
@@ -477,7 +472,7 @@ stock_ledger/
 │           └── lib/           #   api.ts, types.ts, format.ts
 ├── scripts/
 │   └── ingest_coverage.py     # My-TW-Coverage markdown parser + ETL (1,735 companies)
-├── tests/                     # 346 tests across 13 files (93% domain/ledger coverage)
+├── tests/                     # 620+ tests across 22 files (93% domain/ledger coverage)
 ├── docker-compose.yml
 └── data/
     ├── ledger.db              # SQLite DB (auto-created)
@@ -493,7 +488,7 @@ Every `git push origin main` triggers the full automation:
 ```
 git push
   └── GitHub Actions CI
-        ├── pytest          (336 unit tests + smoke test)
+        ├── pytest          (620+ unit tests + smoke test)
         ├── ESLint          (TypeScript/React lint)
         └── tsc --noEmit    (TypeScript type check)
               ↓ all pass
@@ -547,7 +542,7 @@ terraform apply   # provisions all resources in ~2 minutes
 | Core library | Python 3.11, SQLite (stdlib only) |
 | Backend | FastAPI, Uvicorn, Pandas, APScheduler, yfinance |
 | Frontend | Next.js 15, TypeScript, TanStack Query v5, Recharts, Tailwind CSS, shadcn/ui (TradingView dark theme) |
-| Testing | Python `unittest` (346 tests, 13 files, 93% domain/ledger coverage) |
+| Testing | Python `pytest` (620+ tests, 22 files, 93% domain/ledger coverage) |
 | Container | Docker, Docker Compose |
 | Infrastructure | AWS EC2, ECR, VPC, IAM, CloudWatch — provisioned via Terraform |
 | CI/CD | GitHub Actions — pytest + ESLint + tsc → build ECR images → SSH deploy |
