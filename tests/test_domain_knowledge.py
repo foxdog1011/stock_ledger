@@ -27,7 +27,7 @@ from domain.knowledge.analyzer import (
     _extract_tags,
     analyze_content,
 )
-from domain.knowledge.obsidian import _sanitize_filename
+from domain.knowledge.obsidian import _sanitize_filename, _ticker_wikilink
 
 
 @pytest.fixture
@@ -200,6 +200,14 @@ class TestFetcher:
 
 class TestAnalyzer:
 
+    @pytest.fixture(autouse=True)
+    def _reset_ticker_cache(self):
+        """Ensure universe DB cache is cleared so regex-only fallback is used."""
+        from domain.knowledge import analyzer as _mod
+        _mod._KNOWN_TW_TICKERS = None
+        yield
+        _mod._KNOWN_TW_TICKERS = None
+
     def test_extract_tickers_regex(self) -> None:
         text = "台積電(2330)跟聯發科(2454)今天表現亮眼"
         tickers = _extract_tickers_regex(text)
@@ -226,6 +234,19 @@ class TestAnalyzer:
         assert "NVDA" in tickers
         assert "INTC" in tickers
 
+    def test_expanded_us_tickers(self) -> None:
+        text = "PLTR and CRWD are cybersecurity plays"
+        tickers = _extract_us_tickers(text)
+        assert "PLTR" in tickers
+        assert "CRWD" in tickers
+
+    def test_expanded_us_tickers_china_adrs(self) -> None:
+        text = "BABA JD PDD are Chinese ADRs"
+        tickers = _extract_us_tickers(text)
+        assert "BABA" in tickers
+        assert "JD" in tickers
+        assert "PDD" in tickers
+
     def test_extract_tags(self) -> None:
         text = "台積電的半導體技術在AI領域領先"
         tags = _extract_tags(text)
@@ -244,6 +265,135 @@ class TestAnalyzer:
         assert "半導體" in result.tags
         assert result.quality_tier == "unreviewed"
         assert result.bull_case == ""  # no AI analysis
+
+
+# ── Universe DB integration tests ──────────────────────────────────────────
+
+
+class TestUniverseIntegration:
+    """Tests for ticker validation and wikilinks using universe DB."""
+
+    @pytest.fixture
+    def universe_db(self):
+        """Create a temp DB with company_master table and sample data."""
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        con = sqlite3.connect(path)
+        con.execute("""
+            CREATE TABLE company_master (
+                symbol TEXT PRIMARY KEY,
+                name TEXT NOT NULL
+            )
+        """)
+        con.executemany(
+            "INSERT INTO company_master (symbol, name) VALUES (?, ?)",
+            [("2330", "台積電"), ("2454", "聯發科"), ("3008", "大立光")],
+        )
+        con.commit()
+        con.close()
+        yield path
+        os.unlink(path)
+
+    def test_load_known_tickers(self, universe_db: str) -> None:
+        from domain.knowledge.analyzer import _load_known_tickers
+        tickers = _load_known_tickers(universe_db)
+        assert "2330" in tickers
+        assert "2454" in tickers
+        assert "3008" in tickers
+
+    def test_load_known_tickers_missing_db(self) -> None:
+        from domain.knowledge.analyzer import _load_known_tickers
+        result = _load_known_tickers("/nonexistent/path.db")
+        assert result == set()
+
+    def test_extract_tickers_filtered_by_universe(self, universe_db: str) -> None:
+        """When universe DB is available, only known tickers are returned."""
+        from domain.knowledge import analyzer as _mod
+        # Pre-load the known tickers from our test DB
+        _mod._KNOWN_TW_TICKERS = _mod._load_known_tickers(universe_db)
+        try:
+            text = "2330 and 2454 are known, but 1234 is not in universe"
+            tickers = _extract_tickers_regex(text)
+            assert "2330" in tickers
+            assert "2454" in tickers
+            assert "1234" not in tickers
+        finally:
+            _mod._KNOWN_TW_TICKERS = None  # reset global cache
+
+    def test_wikilink_from_universe_db(self, universe_db: str) -> None:
+        """Wikilinks should pick up names from universe DB."""
+        from domain.knowledge import obsidian as _obs_mod
+        _obs_mod._TICKER_NAMES_CACHE = None  # reset cache
+        with patch.dict(os.environ, {"DB_PATH": universe_db}):
+            _obs_mod._TICKER_NAMES_CACHE = None  # force reload
+            link = _ticker_wikilink("3008")
+            assert link == "[[3008-大立光]]"
+        _obs_mod._TICKER_NAMES_CACHE = None  # reset
+
+    def test_wikilink_fallback_without_db(self) -> None:
+        """Wikilinks should still work with hardcoded fallbacks."""
+        from domain.knowledge import obsidian as _obs_mod
+        _obs_mod._TICKER_NAMES_CACHE = None
+        with patch.dict(os.environ, {"DB_PATH": "/nonexistent/path.db"}):
+            _obs_mod._TICKER_NAMES_CACHE = None
+            link = _ticker_wikilink("2330")
+            assert link == "[[2330-台積電]]"
+        _obs_mod._TICKER_NAMES_CACHE = None
+
+    def test_wikilink_unknown_ticker(self) -> None:
+        """Unknown tickers should get plain wikilinks."""
+        from domain.knowledge import obsidian as _obs_mod
+        _obs_mod._TICKER_NAMES_CACHE = None
+        with patch.dict(os.environ, {"DB_PATH": "/nonexistent/path.db"}):
+            _obs_mod._TICKER_NAMES_CACHE = None
+            link = _ticker_wikilink("9999")
+            assert link == "[[9999]]"
+        _obs_mod._TICKER_NAMES_CACHE = None
+
+
+# ── Search tests ──────────────────────────────────────────────────────────
+
+
+class TestSearch:
+
+    def test_fts_search(self, db_path: str) -> None:
+        insert_entry(
+            db_path=db_path, url="https://example.com/semi",
+            source_type="web", title="TSMC Advanced Packaging",
+            content="台積電的CoWoS先進封裝技術是AI晶片的關鍵",
+            summary="CoWoS packaging", tickers=["2330"], tags=["半導體"],
+            quality_tier="medium", bull_case="", bear_case="",
+            audit_notes="", quality_score=0.5, obsidian_path="",
+        )
+        insert_entry(
+            db_path=db_path, url="https://example.com/ev",
+            source_type="web", title="Electric Vehicle Market",
+            content="電動車市場成長快速，特斯拉和比亞迪競爭激烈",
+            summary="EV market growth", tickers=[], tags=["電動車"],
+            quality_tier="medium", bull_case="", bear_case="",
+            audit_notes="", quality_score=0.5, obsidian_path="",
+        )
+        from domain.knowledge.repository import search_entries
+        results = search_entries(db_path, "CoWoS")
+        assert len(results) >= 1
+        assert results[0].title == "TSMC Advanced Packaging"
+
+        results2 = search_entries(db_path, "電動車")
+        assert len(results2) >= 1
+
+    def test_date_range_filter(self, db_path: str) -> None:
+        insert_entry(
+            db_path=db_path, url="https://example.com/date1",
+            source_type="web", title="Old Article",
+            content="Some old content here for testing",
+            summary="Old", tickers=[], tags=[],
+            quality_tier="medium", bull_case="", bear_case="",
+            audit_notes="", quality_score=0.5, obsidian_path="",
+        )
+        entries = list_entries(db_path, created_after="2020-01-01")
+        assert len(entries) >= 1
+        entries_future = list_entries(db_path, created_after="2099-01-01")
+        assert len(entries_future) == 0
 
 
 # ── URL normalization tests ────────────────────────────────────────────────
@@ -378,7 +528,7 @@ class TestKnowledgeAPI:
 
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/knowledge")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Got {resp.status_code}: {resp.text[:500]}"
         data = resp.json()
         assert "total" in data
         assert "entries" in data
@@ -452,6 +602,6 @@ class TestKnowledgeAPI:
         with patch.dict(os.environ, {"JARVIS_KEY": "test-secret-key"}):
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.get("/api/knowledge")
-            assert resp.status_code == 200
+            assert resp.status_code == 200, f"list got {resp.status_code}: {resp.text[:500]}"
             resp2 = client.get("/api/knowledge/stats")
-            assert resp2.status_code == 200
+            assert resp2.status_code == 200, f"stats got {resp2.status_code}: {resp2.text[:500]}"

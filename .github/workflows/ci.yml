@@ -30,7 +30,7 @@ jobs:
         run: mkdir -p data
 
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short --cov=domain --cov=ledger --cov-report=term-missing
+        run: python -m pytest tests/ -v --tb=long --cov=domain --cov=ledger --cov-report=term-missing
 
   # ── 2. Frontend lint ────────────────────────────────────────────────────────
   # Relies on "lint": "next lint" confirmed in apps/web/package.json
