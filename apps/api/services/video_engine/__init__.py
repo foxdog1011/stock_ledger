@@ -24,10 +24,14 @@ from apps.api.services.video_engine.models import (
     PickSectorResponse,
     PickStockRequest,
     PickStockResponse,
+    RotationPickResponse,
     SlotType,
+    TdccPickResponse,
+    TdccSummary,
     VideoRequest,
     WeeklyReviewResponse,
 )
+from apps.api.services.video_engine.parallel import render_slides_parallel
 from apps.api.services.video_engine.pick_stock import (
     SLOT_CONFIG,
     build_chip_summary,
@@ -38,13 +42,19 @@ from apps.api.services.video_engine.script_gen import openai_script
 from apps.api.services.video_engine.slides import (
     make_cumulative_chart,
     make_foreign_chart,
+    make_rotation_shorts_slide,
     make_sector_breakdown_chart,
     make_sector_title_slide,
     make_shorts_slide,
+    make_stock_summary_slide,
     make_summary_slide,
+    make_tdcc_shorts_slide,
+    make_trends_shorts_slide,
     make_thumbnail,
     make_title_slide,
     make_trust_dealer_chart,
+    make_weekly_review_summary_slide,
+    make_weekly_review_title_slide,
 )
 from apps.api.services.video_engine.tts import (
     clean_script_for_tts,
@@ -79,9 +89,14 @@ __all__ = [
     "PickSectorResponse",
     "PickStockRequest",
     "PickStockResponse",
+    "RotationPickResponse",
     "SlotType",
+    "TdccPickResponse",
+    "TdccSummary",
     "VideoRequest",
     "WeeklyReviewResponse",
+    # parallel
+    "render_slides_parallel",
     # pick_stock
     "SLOT_CONFIG",
     "build_chip_summary",
@@ -92,13 +107,19 @@ __all__ = [
     # slides
     "make_cumulative_chart",
     "make_foreign_chart",
+    "make_rotation_shorts_slide",
     "make_sector_breakdown_chart",
     "make_sector_title_slide",
     "make_shorts_slide",
+    "make_stock_summary_slide",
     "make_summary_slide",
+    "make_tdcc_shorts_slide",
+    "make_trends_shorts_slide",
     "make_thumbnail",
     "make_title_slide",
     "make_trust_dealer_chart",
+    "make_weekly_review_summary_slide",
+    "make_weekly_review_title_slide",
     # tts
     "clean_script_for_tts",
     "tts_edge",
